@@ -159,7 +159,7 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
     {
         bypass_immunity[victim] = false
     }
-    else if (is_fluttershy[victim])
+    else if (is_fluttershy[victim] && !IsWorldDeath(attacker))
     {
         current_health[victim] = current_health[victim] - RoundFloat(damage)
         
@@ -193,6 +193,13 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     {
         damagetype = damagetype | _:DMG_NEVERGIB & _:(!DMG_ALWAYSGIB)
         return Plugin_Changed
+    }
+    
+    // Respawn players that fall off the map instantly since they cannot die to the fall damage
+    if (IsWorldDeath(attacker))
+    {
+        TF2_RespawnPlayer(victim)
+        return Plugin_Handled
     }
         
     if (is_fluttershy[victim])
@@ -228,6 +235,11 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
         damage = 0.0
         return Plugin_Changed
     }
+}
+
+bool:IsWorldDeath(attacker)
+{
+    return attacker == 107
 }
 
 FreezePlayer(victim, attacker)
@@ -269,7 +281,76 @@ public Action:UnfreezePlayerCommand(client, args)
 // Handle debug/admin flutts command
 public Action:MakeFluttershyCommand(client, args)
 {
-    MakeFluttershy(client)
+    decl String:text[MAX_NAME_LENGTH]
+    decl String:name[MAX_NAME_LENGTH]
+    decl String:user_id[16]
+    
+    if (args < 1)
+    {
+        new Handle:menu = CreateMenu(MakeFluttershyMenuHandler)
+        SetMenuTitle(menu, "Select a player:")
+        for (new i = 1; i <= MaxClients; i++)
+        {
+            if (IsClientInGame(i))
+            {
+                GetClientName(i, name, sizeof(name))
+                IntToString(GetClientUserId(i), user_id, sizeof(user_id))
+                AddMenuItem(menu, user_id, name)
+            }
+        }
+        
+        SetMenuExitButton(menu, true);
+        DisplayMenu(menu, client, 20);
+        
+        return Plugin_Handled
+    }
+    else 
+    { 
+        GetCmdArgString(text, sizeof(text))
+     
+        new startidx = 0
+        if (text[0] == '"')
+        {
+            startidx = 1
+            /* Strip the ending quote, if there is one */
+            new len = strlen(text);
+            if (text[len-1] == '"')
+            {
+                text[len-1] = '\0'
+            }
+        }
+        
+        new target = -1
+        
+        for (new i = 1; i <= MaxClients; i++)
+        {
+            if (IsClientInGame(i))
+            {
+                GetClientName(i, name, sizeof(name))
+                if (StrContains(name, text[startidx], false) > -1)
+                {
+                    if (target != -1)
+                    {
+                        ReplyToCommand(client, "Ambiguous player name '%s'.", text[startidx])
+                        return Plugin_Handled
+                    }
+                    else
+                    {
+                        target = i
+                    }
+                }
+            }
+        }
+        if (target > 0)
+            MakeFluttershy(target)
+        else
+            ReplyToCommand(client, "Could not find player '%s'.", text[startidx])
+        return Plugin_Handled
+    }
+}
+
+SelectPlayer(client, MenuHandler:handler, String:search_name[])
+{
 }
 
 // Handle debug/admin unflutts command
@@ -277,6 +358,23 @@ public Action:ClearFluttershyCommand(client, args)
 {
     PrintToChatAll("The Guardians have rescinded %N's Flutterhood!", client)
     ClearFluttershy(client, 0)
+}
+
+public MakeFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2)
+{
+    decl String:info[32]
+
+    if (action == MenuAction_Select)
+    {
+        GetMenuItem(menu, param2, info, sizeof(info))
+        new target = GetClientOfUserId(StringToInt(info))
+        if (IsClientInGame(target))
+        MakeFluttershy(target)
+    }
+    else if (action == MenuAction_End)
+    {
+        CloseHandle(menu)
+    }
 }
 
 MakeFluttershy(client)
