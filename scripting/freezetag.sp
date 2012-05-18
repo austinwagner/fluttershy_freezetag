@@ -9,7 +9,6 @@
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 
 new original_ff_val
-new original_autokick_val
 new original_disable_respawn_times_val
 new original_scramble_teams_val
 new original_teams_unbalance_val
@@ -17,7 +16,6 @@ new original_autobalance_val
 new original_respawnwavetime_val
 
 new Handle:ff_convar
-new Handle:disable_autokick_convar
 new Handle:disable_respawn_times_convar
 new Handle:scramble_teams_convar
 new Handle:teams_unbalance_convar
@@ -76,7 +74,7 @@ public OnPluginStart()
     }
     
     // Apply SDKHooks to all clients in the server when the plugin is loaded
-    for (new i=1; i<=MaxClients; i++)
+    for (new i = 1; i <= MaxClients; i++)
     {
         if (IsClientInGame(i))
         {
@@ -160,7 +158,6 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
     if (bypass_immunity[victim])
     {
         bypass_immunity[victim] = false
-        return Plugin_Handled
     }
     else if (is_fluttershy[victim])
     {
@@ -186,7 +183,6 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
             SetEntityHealth(victim, displayed_health[victim])
         }
     }
-    return Plugin_Handled
 }
 
 public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3])
@@ -195,7 +191,7 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     // due to using an explosive entity to kill the player
     if (bypass_immunity[victim])
     {
-        damagetype = damagetype | DMG_NEVERGIB & !DMG_ALWAYSGIB 
+        damagetype = damagetype | _:DMG_NEVERGIB & _:(!DMG_ALWAYSGIB)
         return Plugin_Changed
     }
         
@@ -236,9 +232,9 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 
 FreezePlayer(victim, attacker)
 {
-    new String:victim_name[64]
-    new String:attacker_name[64]
-    GetCustomClientName(victim, victim_name[], sizeof(victim_name))
+    decl String:victim_name[MAX_NAME_LENGTH]
+    decl String:attacker_name[MAX_NAME_LENGTH]
+    GetCustomClientName(victim, victim_name, sizeof(victim_name))
     GetCustomClientName(attacker, attacker_name, sizeof(attacker_name))
     
     PrintToChatAll("%s frozen by %s.", victim_name, attacker_name)
@@ -247,9 +243,9 @@ FreezePlayer(victim, attacker)
 
 UnfreezePlayer(victim, attacker)
 {
-    new String:victim_name[64]
-    new String:attacker_name[64]
-    GetCustomClientName(victim, victim_name[], sizeof(victim_name))
+    decl String:victim_name[MAX_NAME_LENGTH]
+    decl String:attacker_name[MAX_NAME_LENGTH]
+    GetCustomClientName(victim, victim_name, sizeof(victim_name))
     GetCustomClientName(attacker, attacker_name, sizeof(attacker_name))
     
     PrintToChatAll("%s has been unfrozen by %s!", victim_name, attacker_name)
@@ -258,16 +254,16 @@ UnfreezePlayer(victim, attacker)
 
 GetCustomClientName(client, String:name[], length)
 {
-    if (attacker == -1)
-        strcopy(attacker_name, sizeof(attacker_name), "The Guardians")
+    if (client < 1)
+        strcopy(name, length, "The Guardians")
     else
-        GetClientName(attacker, attacker_name, sizeof(attacker_name))
+        GetClientName(client, name, length)
 }
 
 // Handle debug/admin unfreeze command
 public Action:UnfreezePlayerCommand(client, args)
 {
-    UnfreezePlayer(client, -1)
+    UnfreezePlayer(client, 0)
 }
 
 // Handle debug/admin flutts command
@@ -280,7 +276,7 @@ public Action:MakeFluttershyCommand(client, args)
 public Action:ClearFluttershyCommand(client, args)
 {
     PrintToChatAll("The Guardians have rescinded %N's Flutterhood!", client)
-    ClearFluttershy(client)
+    ClearFluttershy(client, 0)
 }
 
 MakeFluttershy(client)
@@ -290,7 +286,11 @@ MakeFluttershy(client)
     is_fluttershy[client] = true
     ChangeClientTeam(client, 3)
     TF2_RespawnPlayer(client)
-    displayed_health[client] = (1000 < FLUTTERSHY_MAX_HP) ? 1000 : FLUTTERSHY_MAX_HP
+#if FLUTTERSHY_MAX_HP < 1000
+    displayed_health[client] = FLUTTERSHY_MAX_HP
+#else
+    displayed_health[client] = 1000
+#endif
     current_health[client] = FLUTTERSHY_MAX_HP
     SetEntityHealth(client, displayed_health[client])
 }
@@ -333,7 +333,7 @@ public Action:RemoveExplosion(Handle:timer, any:ent)
 { 
     if (IsValidEntity(ent)) 
     { 
-        new String:edictname[128]; 
+        decl String:edictname[128]; 
         GetEdictClassname(ent, edictname, 128); 
         if(StrEqual(edictname, "env_explosion")) 
         { 
