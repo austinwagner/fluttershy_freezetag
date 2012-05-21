@@ -79,22 +79,6 @@ public OnPluginStart()
     
     LoadConVars()
     
-    // Admin commands (currently not admin only for debugging)
-    RegConsoleCmd("unfreeze", UnfreezePlayerCommand)
-    RegConsoleCmd("freeze", FreezePlayerCommand)
-    RegConsoleCmd("flutts", MakeFluttershyCommand)
-    RegConsoleCmd("unflutts", ClearFluttershyCommand)
-    
-    RegConsoleCmd("ts", TestCmd)
-    
-    // Block team swapping
-    // TODO: Replace RegConsoleCommand with the correct command hook
-    RegConsoleCmd("jointeam", BlockCommandAll)
-    RegConsoleCmd("joinclass", JoinClassCommand)
-    RegConsoleCmd("kill", BlockCommandFluttershy)
-    RegConsoleCmd("spectate", BlockCommandAll)
-    RegConsoleCmd("explode", BlockCommandFluttershy)
-    
     ff_cvar = FindConVar("mp_friendlyfire")
     disable_respawn_times_cvar = FindConVar("mp_disable_respawn_times")
     scramble_teams_cvar = FindConVar("mp_scrambleteams_auto")
@@ -102,43 +86,13 @@ public OnPluginStart()
     autobalance_cvar = FindConVar("mp_autoteambalance")
     respawnwavetime_cvar = FindConVar("mp_respawnwavetime")
     
-    original_ff_val = GetConVarInt(ff_cvar)
-    original_disable_respawn_times_val = GetConVarInt(disable_respawn_times_cvar)
-    original_scramble_teams_val = GetConVarInt(scramble_teams_cvar)
-    original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar)
-    original_autobalance_val = GetConVarInt(autobalance_cvar)
-    original_respawnwavetime_val = GetConVarInt(respawnwavetime_cvar)
+    // Admin commands (currently not admin only for debugging)
+    RegConsoleCmd("unfreeze", UnfreezePlayerCommand)
+    RegConsoleCmd("freeze", FreezePlayerCommand)
+    RegConsoleCmd("flutts", MakeFluttershyCommand)
+    RegConsoleCmd("unflutts", ClearFluttershyCommand)
     
-    SetConVarInt(ff_cvar, 1)
-    SetConVarInt(disable_respawn_times_cvar, 1)
-    SetConVarInt(scramble_teams_cvar, 0)
-    SetConVarInt(teams_unbalance_cvar, 0)
-    SetConVarInt(autobalance_cvar, 0)
-    SetConVarInt(respawnwavetime_cvar, 0)
-    
-    // Initialize arrays
-    for (new i = 1; i < MAX_CLIENT_IDS; i++)
-    {
-        is_fluttershy[i] = false
-        bypass_immunity[i] = false
-        stun_immunity[i] = false
-    }
-    
-    num_killers = 0
-    num_fluttershys = 0
-    num_red = 0
-    num_stunned = 0
-    
-    // Apply SDKHooks to all clients in the server when the plugin is loaded
-    for (new i = 1; i <= MaxClients; i++)
-    {
-        if (IsClientInGame(i))
-        {
-            OnClientPutInServer(i)
-        }
-    }
-    
-    HookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre)
+    RegConsoleCmd("ts", TestCmd)
 }
 
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
@@ -191,15 +145,99 @@ LoadConVars()
     freeze_duration = GetConVarFloat(freeze_duration_cvar)
     freeze_immunity_time = GetConVarFloat(freeze_immunity_cvar)
     round_restart_time = GetConVarInt(round_restart_cvar)
-    enabled = GetConVarBool(enabled_cvar)
+    
+    if (enabled != GetConVarBool(enabled_cvar))
+    {
+        enabled = GetConVarBool(enabled_cvar)
+        if (enabled)
+            EnablePlugin()
+        else
+            DisablePlugin()
+    }
 }
 
 EnablePlugin()
 {
+    original_ff_val = GetConVarInt(ff_cvar)
+    original_disable_respawn_times_val = GetConVarInt(disable_respawn_times_cvar)
+    original_scramble_teams_val = GetConVarInt(scramble_teams_cvar)
+    original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar)
+    original_autobalance_val = GetConVarInt(autobalance_cvar)
+    original_respawnwavetime_val = GetConVarInt(respawnwavetime_cvar)
+    
+    SetConVarInt(ff_cvar, 1)
+    SetConVarInt(disable_respawn_times_cvar, 1)
+    SetConVarInt(scramble_teams_cvar, 0)
+    SetConVarInt(teams_unbalance_cvar, 0)
+    SetConVarInt(autobalance_cvar, 0)
+    SetConVarInt(respawnwavetime_cvar, 0)
+    
+    // Initialize arrays
+    for (new i = 1; i < MAX_CLIENT_IDS; i++)
+    {
+        is_fluttershy[i] = false
+        bypass_immunity[i] = false
+        stun_immunity[i] = false
+    }
+    
+    num_killers = 0
+    num_fluttershys = 0
+    num_red = 0
+    num_stunned = 0
+    
+    // Apply SDKHooks to all clients in the server when the plugin is loaded
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i))
+        {
+            OnClientPutInServer(i)
+        }
+    }
+    
+    // Block team swapping and suicides
+    AddCommandListener(BlockCommandAll, "jointeam")
+    AddCommandListener(JoinClassCommand, "joinclass")
+    AddCommandListener(BlockCommandFluttershy, "kill")
+    AddCommandListener(BlockCommandAll, "spectate")
+    AddCommandListener(BlockCommandFluttershy, "explode")
+    
+    HookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre)
+    
+    ServerCommand("mp_restartgame_immediate 1")
 }
 
 DisablePlugin()
 {
+    SetConVarInt(ff_cvar, original_ff_val)
+    SetConVarInt(disable_respawn_times_cvar, original_disable_respawn_times_val)
+    SetConVarInt(scramble_teams_cvar, original_scramble_teams_val)
+    SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val)
+    SetConVarInt(autobalance_cvar, original_autobalance_val)
+    SetConVarInt(respawnwavetime_cvar, original_respawnwavetime_val)
+    
+    RemoveCommandListener(BlockCommandAll, "jointeam")
+    RemoveCommandListener(JoinClassCommand, "joinclass")
+    RemoveCommandListener(BlockCommandFluttershy, "kill")
+    RemoveCommandListener(BlockCommandAll, "spectate")
+    RemoveCommandListener(BlockCommandFluttershy, "explode")
+    
+    UnhookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre)
+    
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i))
+        {
+            SDKUnhook(i, SDKHook_OnTakeDamage, OnTakeDamage)
+            SDKUnhook(i, SDKHook_OnTakeDamagePost, OnTakeDamagePost)
+            SDKUnhook(i, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo)
+            SDKUnhook(i, SDKHook_WeaponCanUse, WeaponCanSwitchTo)
+            SDKUnhook(i, SDKHook_Spawn, OnSpawn)
+            SDKUnhook(i, SDKHook_PreThinkPost, PreThinkPost)
+        }
+    }   
+    
+    ServerCommand("mp_scrambleteams")
+    ServerCommand("mp_restartgame_immediate 1")
 }
 
 public OnMapStart()
@@ -238,53 +276,54 @@ public PreThinkPost(client){
 
 public OnPluginEnd()
 {
-    SetConVarInt(ff_cvar, original_ff_val)
-    SetConVarInt(disable_respawn_times_cvar, original_disable_respawn_times_val)
-    SetConVarInt(scramble_teams_cvar, original_scramble_teams_val)
-    SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val)
-    SetConVarInt(autobalance_cvar, original_autobalance_val)
-    SetConVarInt(respawnwavetime_cvar, original_respawnwavetime_val)
+    DisablePlugin()
 }
 
 public OnClientPutInServer(client)
 {
-    SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage)
-    SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost)
-    SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo)
-    SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo)
-    SDKHook(client, SDKHook_Spawn, OnSpawn)
-    SDKHook(client, SDKHook_PreThinkPost, PreThinkPost)
-    ChangeClientTeam(client, 2)
-    num_red++
+    if (enabled)
+    {
+        SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage)
+        SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost)
+        SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo)
+        SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo)
+        SDKHook(client, SDKHook_Spawn, OnSpawn)
+        SDKHook(client, SDKHook_PreThinkPost, PreThinkPost)
+        ChangeClientTeam(client, 2)
+        num_red++
+    }
 }
 
 public OnClientDisconnect(client)
 {
     decl String:steam_id[20]
     
-    if (is_fluttershy[client])
+    if (enabled)
     {
+        if (is_fluttershy[client])
+        {
+            is_fluttershy[client] = false
+            num_fluttershys--
+        }
+        else
+        {
+            num_red--
+        }
+            
+        if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
+        {
+            GetClientAuthString(client, steam_id, sizeof(steam_id))
+            dc_while_stunned[num_dc_while_stunned] = steam_id
+            num_dc_while_stunned++
+            num_stunned--
+        }
+            
         is_fluttershy[client] = false
-        num_fluttershys--
-    }
-    else
-    {
-        num_red--
-    }
+        bypass_immunity[client] = false
+        stun_immunity[client] = false
         
-    if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
-    {
-        GetClientAuthString(client, steam_id, sizeof(steam_id))
-        dc_while_stunned[num_dc_while_stunned] = steam_id
-        num_dc_while_stunned++
-        num_stunned--
+        CheckWinCondition()
     }
-        
-    is_fluttershy[client] = false
-    bypass_immunity[client] = false
-    stun_immunity[client] = false
-    
-    CheckWinCondition()
 }
 
 public Action:OnSpawn(client)
@@ -332,11 +371,14 @@ public Action:WeaponCanSwitchTo(client, weapon)
 
 public OnGameFrame()
 {
-    // This reverses the health degeneration of the Fluttershys
-    for (new i = 0; i < sizeof(is_fluttershy); i++)
+    if (enabled)
     {
-        if (is_fluttershy[i])
-            SetEntityHealth(i, displayed_health[i])
+        // This reverses the health degeneration of the Fluttershys
+        for (new i = 0; i < sizeof(is_fluttershy); i++)
+        {
+            if (is_fluttershy[i])
+                SetEntityHealth(i, displayed_health[i])
+        }
     }
 }
 
@@ -795,12 +837,12 @@ public Action:RemoveExplosion(Handle:timer, any:ent)
     } 
 }  
 
-public Action:BlockCommandAll(client, args)
+public Action:BlockCommandAll(client, const String:command[], argc)
 {
     return Plugin_Handled
 }
 
-public Action:BlockCommandFluttershy(client, args)
+public Action:BlockCommandFluttershy(client, const String:command[], argc)
 {
     if (is_fluttershy[client])
         return Plugin_Handled
@@ -808,7 +850,7 @@ public Action:BlockCommandFluttershy(client, args)
         return Plugin_Continue
 }
 
-public Action:JoinClassCommand(client, args)
+public Action:JoinClassCommand(client, const String:command[], argc)
 {
     decl String:class[10]
     
