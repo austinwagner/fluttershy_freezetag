@@ -21,13 +21,6 @@
 #define SHAME_STUN_DURATION 5000.0
 #define SLOT_MELEE 2
 #define SLOT_PRIMARY 0
-#define MINIGUN_RELOAD_TIME 10.0
-#define FLAMETHROWER_RELOAD_TIME 10.0
-#define MINIGUN_MIN_RELOAD_TIME 7.5
-#define FLAMETHROWER_MIN_RELOAD_TIME 5.0
-#define MINIGUN_AMMO 50
-#define FLAMETHROWER_AMMO 100
-#define AIRBLAST_COOLDOWN_TIME 5.0
 
 public Plugin:myinfo =
 {
@@ -54,11 +47,23 @@ new Handle:max_hp_cvar;
 new Handle:freeze_duration_cvar;
 new Handle:freeze_immunity_cvar;
 new Handle:enabled_cvar;
+new Handle:flamethrower_reload_time_cvar;
+new Handle:minigun_reload_time_cvar;
+new Handle:minigun_ammo_cvar;
+new Handle:flamethrower_ammo_cvar;
+new Handle:airblast_cooldown_time_cvar;
+new Handle:round_time_cvar;
 
 new max_hp;
 new Float:freeze_duration;
 new Float:freeze_immunity_time;
 new bool:enabled;
+new Float:minigun_reload_time;
+new Float:flamethrower_reload_time;
+new minigun_ammo;
+new flamethrower_ammo;
+new Float:airblast_cooldown_time;
+new round_time;
 
 new bool:is_fluttershy[MAX_CLIENT_IDS];
 new displayed_health[MAX_CLIENT_IDS];
@@ -70,14 +75,11 @@ new bool:airblast_cooldown[MAX_CLIENT_IDS];
 new Handle:airblast_timer[MAX_CLIENT_IDS];
 new killer[4];
 new num_killers;
-new num_fluttershys;
-new num_red;
-new num_stunned;
 new num_dc_while_stunned;
 new ammo_offset;
 new Handle:reload_timer[MAX_CLIENT_IDS];
-new fake_body = -1;
 new master_cp = -1;
+new bool:win_conditions_checked;
 
 
 public OnPluginStart()
@@ -86,12 +88,24 @@ public OnPluginStart()
     freeze_duration_cvar = CreateConVar("freezetag_freeze_time", "120.0", "The amount of time in seconds a player will remain frozen for before automatically unfreezing.", CVAR_FLAGS);
     freeze_immunity_cvar = CreateConVar("freezetag_immunity_time", "2.0", "The amount of time in seconds during which a player cannot be unfrozen or refrozen.", CVAR_FLAGS);
     enabled_cvar = CreateConVar("freezetag_enabled", "0", "0 to disable, 1 to enable.", CVAR_FLAGS);
+    minigun_reload_time_cvar = CreateConVar("freezetag_minigun_reload", "10.0", "The amount of time in seconds it takes to reload a player's Minigun.", CVAR_FLAGS);
+    flamethrower_reload_time_cvar = CreateConVar("freezetag_flamethrower_reload", "10.0", "The amount of time in seconds it takes to reload a player's Flamethrower.", CVAR_FLAGS);
+    minigun_ammo_cvar = CreateConVar("freezetag_minigun_ammo", "50", "The maximum number of bullets a Minigun can hold.", CVAR_FLAGS);
+    flamethrower_ammo_cvar = CreateConVar("freezetag_flamethrower_ammo", "100", "The maximum amount of ammo a Flamethrower can hold.", CVAR_FLAGS);
+    airblast_cooldown_time_cvar = CreateConVar("freezetag_airblast_cooldown", "5.0", "The amount of time in seconds before a Pyro can airblast again.", CVAR_FLAGS);
+    round_time_cvar = CreateConVar("freezetag_round_time", "300", "The amount of time in seconds that a round will last.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
     HookConVarChange(freeze_duration_cvar, ConVarChanged);
     HookConVarChange(freeze_immunity_cvar, ConVarChanged);
     HookConVarChange(enabled_cvar, ConVarChanged);
+    HookConVarChange(minigun_reload_time_cvar, ConVarChanged);
+    HookConVarChange(flamethrower_reload_time_cvar, ConVarChanged);
+    HookConVarChange(minigun_ammo_cvar, ConVarChanged);
+    HookConVarChange(flamethrower_ammo_cvar, ConVarChanged);
+    HookConVarChange(airblast_cooldown_time_cvar, ConVarChanged);
+    HookConVarChange(round_time_cvar, ConVarChanged);
     
     ff_cvar = FindConVar("mp_friendlyfire");
     scramble_teams_cvar = FindConVar("mp_scrambleteams_auto");
@@ -158,19 +172,23 @@ LoadSoundConfig()
     }
 }
 
+public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
+{
+    CheckWinCondition();
+}
+
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
     num_killers = 0;
-    num_fluttershys = 0;
-    num_red = 0;
-    num_stunned = 0;
     num_dc_while_stunned = 0;
+    win_conditions_checked = false;
     
     for (new i = 0; i < MAX_DC_PROT; i++)
     {
         dc_while_stunned[i] = "";
     }
     
+    new num_red = 0;
     for (new i = 1; i <= MaxClients; i++)
     {
         is_fluttershy[i] = false;
@@ -184,12 +202,17 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         }
     }
     
+    new num_fluttershys = 0;
     new fshy_goal = RoundToCeil(FloatMul(float(num_red), 0.11111));
     while (num_fluttershys < fshy_goal)
     {
         new client = GetRandomInt(1, MaxClients);
         if (IsClientInGame(client) && !IsClientObserver(client) && !is_fluttershy[client])
+        {
+            num_fluttershys++;
             MakeFluttershy(client);
+            ShowVGUIPanel(client, "class_red", _, false);
+        }
     }
     
     for (new i = 1; i <= MaxClients; i++)
@@ -205,11 +228,94 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         DispatchSpawn(master_cp);
         AcceptEntityInput(master_cp, "Enable");
     }
+    
+    new team_round_timer = FindEntityByClassname(-1, "team_round_timer");
+    if (team_round_timer == -1)
+        DispatchSpawn(team_round_timer);
+        
+    
+    SetEntProp(team_round_timer, Prop_Send, "m_nSetupTimeLength", 0);
+    SetEntProp(team_round_timer, Prop_Send, "m_bShowInHUD", 1);
+    SetVariantInt(round_time);
+    AcceptEntityInput(team_round_timer, "SetMaxTime");
+    SetVariantInt(round_time);
+    AcceptEntityInput(team_round_timer, "SetTime");
+    
+    SetupMap();
+}
+
+SetupMap()
+{
+    new entity;
+    decl String:model[128];
+    decl Float:teleport_location[3];
+    
+    teleport_location[0] = 0.0;
+    teleport_location[1] = 0.0;
+    teleport_location[2] = 0.0;
+    
+
+    entity = -1;
+    while ((entity = FindEntityByClassname(entity, "func_regenerate")) != -1)
+        AcceptEntityInput(entity, "Kill");
+
+    entity = -1;
+    while ((entity = FindEntityByClassname(entity, "func_respawnroomvisualizer")) != -1)
+        AcceptEntityInput(entity, "Kill");
+
+    entity = -1;
+    while ((entity = FindEntityByClassname(entity, "trigger_multiple")) != -1)
+        AcceptEntityInput(entity, "Kill");
+        
+    entity = -1;
+    while ((entity = FindEntityByClassname(entity, "trigger_capture_area")) != -1)
+        AcceptEntityInput(entity, "Kill");
+
+    entity = -1;   
+    while ((entity = FindEntityByClassname(entity, "team_control_point")) != -1)
+        TeleportEntity(entity, teleport_location, NULL_VECTOR, NULL_VECTOR);
+
+    entity = -1;   
+    while ((entity = FindEntityByClassname(entity, "item_ammopack_*")) != -1)
+        AcceptEntityInput(entity, "Kill");
+ 
+    entity = -1;  
+    while ((entity = FindEntityByClassname(entity, "item_healthkit_*")) != -1)
+        AcceptEntityInput(entity, "Kill");
+
+    entity = -1;   
+    while ((entity = FindEntityByClassname(entity, "tf_logic_medieval")) != -1)
+        AcceptEntityInput(entity, "Kill");
+
+    entity = -1;
+    while ((entity = FindEntityByClassname(entity, "tf_logic_cp_timer")) != -1)
+        AcceptEntityInput(entity, "Kill");
+
+    entity = -1;   
+    while ((entity = FindEntityByClassname(entity, "func_capturezone")) != -1)
+        AcceptEntityInput(entity, "Kill");
+ 
+    entity = -1;   
+    while ((entity = FindEntityByClassname(entity, "item_teamflag")) != -1)
+        AcceptEntityInput(entity, "Kill");
+ 
+    entity = -1;  
+    while ((entity = FindEntityByClassname(entity, "prop_dynamic")) != -1)
+    {
+        GetEntPropString(entity, Prop_Data, "m_ModelName", model, sizeof(model));
+        if (StrEqual("models/props_gameplay/cap_point_base.mdl", model, false))
+            AcceptEntityInput(entity, "Kill");
+    }
+    
+    entity = -1;
+    while ((entity = FindEntityByClassname(entity, "func_door")) != -1)
+        AcceptEntityInput(entity, "Open");
+       
 }
 
 public ConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
 {
-    LoadConVars();
+    LoadConVars2();
 }
 
 LoadConVars()
@@ -217,7 +323,28 @@ LoadConVars()
     max_hp = GetConVarInt(max_hp_cvar);
     freeze_duration = GetConVarFloat(freeze_duration_cvar);
     freeze_immunity_time = GetConVarFloat(freeze_immunity_cvar);
-    
+    minigun_reload_time = GetConVarFloat(minigun_reload_time_cvar);
+    flamethrower_reload_time = GetConVarFloat(flamethrower_reload_time_cvar);
+    minigun_ammo = GetConVarInt(minigun_ammo_cvar);
+    flamethrower_ammo = GetConVarInt(flamethrower_ammo_cvar);
+    airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
+    round_time = GetConVarInt(round_time_cvar);
+    enabled = GetConVarBool(enabled_cvar);
+}
+
+// Temp workaround
+LoadConVars2()
+{
+    max_hp = GetConVarInt(max_hp_cvar);
+    freeze_duration = GetConVarFloat(freeze_duration_cvar);
+    freeze_immunity_time = GetConVarFloat(freeze_immunity_cvar);
+    minigun_reload_time = GetConVarFloat(minigun_reload_time_cvar);
+    flamethrower_reload_time = GetConVarFloat(flamethrower_reload_time_cvar);
+    minigun_ammo = GetConVarInt(minigun_ammo_cvar);
+    flamethrower_ammo = GetConVarInt(flamethrower_ammo_cvar);
+    airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
+    round_time = GetConVarInt(round_time_cvar);
+
     if (enabled != GetConVarBool(enabled_cvar))
     {
         enabled = GetConVarBool(enabled_cvar);
@@ -230,6 +357,7 @@ LoadConVars()
 
 EnablePlugin()
 {
+    LogMessage("Enabling...");
     original_ff_val = GetConVarInt(ff_cvar);
     original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
     original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
@@ -249,11 +377,6 @@ EnablePlugin()
         airblast_cooldown[i] = false;
     }
     
-    num_killers = 0;
-    num_fluttershys = 0;
-    num_red = 0;
-    num_stunned = 0;
-    
     // Apply SDKHooks to all clients in the server when the plugin is loaded
     for (new i = 1; i <= MaxClients; i++)
     {
@@ -271,6 +394,9 @@ EnablePlugin()
     AddCommandListener(BlockCommandFluttershy, "explode");
     
     HookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
+    
+    HookEvent("teamplay_round_win", RoundEnd);
+    HookEvent("teamplay_round_stalemate", RoundEnd);
     
     ServerCommand("mp_restartgame_immediate 1");
 }
@@ -354,38 +480,32 @@ public PreThinkPost(client){
     // Handle reloading weapons that normally don't have a reload
     if (TF2_GetPlayerClass(client) == TFClass_Heavy)
     {
-        if (GetEntData(client, ammo_offset + 4, 4) > MINIGUN_AMMO)
+        if (GetEntData(client, ammo_offset + 4, 4) > minigun_ammo)
         {
-            SetEntData(client, ammo_offset + 4, MINIGUN_AMMO, 4);
+            SetEntData(client, ammo_offset + 4, minigun_ammo, 4);
         }
         else if (reload_timer[client] == INVALID_HANDLE && 
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY))
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            new Float:reload_time = FloatSub(1.0, FloatDiv(float(GetEntData(client, ammo_offset + 4, 4)), float(MINIGUN_AMMO)));
-            reload_time = FloatMul(reload_time, MINIGUN_RELOAD_TIME);
-            reload_time = reload_time < MINIGUN_MIN_RELOAD_TIME ? MINIGUN_MIN_RELOAD_TIME : reload_time;
             PrintToChat(client, "Reloading minigun...");
             SetEntData(client, ammo_offset + 4, 0, 4);
-            reload_timer[client] = CreateTimer(reload_time, ReloadMinigun, client);
+            reload_timer[client] = CreateTimer(minigun_reload_time, ReloadMinigun, client);
         }
     }
     else if (TF2_GetPlayerClass(client) == TFClass_Pyro)
     {
-        if (GetEntData(client, ammo_offset + 4, 4) > FLAMETHROWER_AMMO)
+        if (GetEntData(client, ammo_offset + 4, 4) > flamethrower_ammo)
         {
-            SetEntData(client, ammo_offset + 4, FLAMETHROWER_AMMO, 4);
+            SetEntData(client, ammo_offset + 4, flamethrower_ammo, 4);
         }
         else if (reload_timer[client] == INVALID_HANDLE && 
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY)) 
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            new Float:reload_time = FloatSub(1.0, FloatDiv(float(GetEntData(client, ammo_offset + 4, 4)), float(FLAMETHROWER_AMMO)));
-            reload_time = FloatMul(reload_time, FLAMETHROWER_RELOAD_TIME);
-            reload_time = reload_time < FLAMETHROWER_MIN_RELOAD_TIME ? FLAMETHROWER_MIN_RELOAD_TIME : reload_time;
             PrintToChat(client, "Reloading flamethrower...");
             SetEntData(client, ammo_offset + 4, 0, 4);
-            reload_timer[client] = CreateTimer(reload_time, ReloadFlamethrower, client);
+            reload_timer[client] = CreateTimer(flamethrower_reload_time, ReloadFlamethrower, client);
         }
     }
     else
@@ -407,7 +527,7 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
         else if (buttons & IN_ATTACK2 == IN_ATTACK2 && TF2_GetPlayerClass(client) == TFClass_Pyro)
         {
             airblast_cooldown[client] = true;
-            airblast_timer[client] = CreateTimer(AIRBLAST_COOLDOWN_TIME, ResetAirblast, client);
+            airblast_timer[client] = CreateTimer(airblast_cooldown_time, ResetAirblast, client);
         }
         
         return Plugin_Changed;
@@ -430,7 +550,7 @@ public Action:ReloadMinigun(Handle:timer, any:client)
     if (IsClientInGame(client))
     {
         PrintToChat(client, "Minigun reloaded.");
-        SetEntData(client, ammo_offset + 4, MINIGUN_AMMO, 4);  
+        SetEntData(client, ammo_offset + 4, minigun_ammo, 4);  
     }
     reload_timer[client] = INVALID_HANDLE;
 }
@@ -440,7 +560,7 @@ public Action:ReloadFlamethrower(Handle:timer, any:client)
     if (IsClientInGame(client))
     {
         PrintToChat(client, "Flamethrower reloaded.");
-        SetEntData(client, ammo_offset + 4, FLAMETHROWER_AMMO, 4);    
+        SetEntData(client, ammo_offset + 4, flamethrower_ammo, 4);    
     }
     reload_timer[client] = INVALID_HANDLE;
 }
@@ -462,7 +582,6 @@ public OnClientPutInServer(client)
         SDKHook(client, SDKHook_Spawn, OnSpawn);
         SDKHook(client, SDKHook_PreThinkPost, PreThinkPost);
         ChangeClientTeam(client, TEAM_RED);
-        num_red++;
     }
 }
 
@@ -472,22 +591,13 @@ public OnClientDisconnect(client)
     
     if (enabled)
     {
-        if (is_fluttershy[client])
-        {
-            is_fluttershy[client] = false;
-            num_fluttershys--;
-        }
-        else
-        {
-            num_red--;
-        }
+        is_fluttershy[client] = false;
             
         if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
         {
             GetClientAuthString(client, steam_id, sizeof(steam_id));
             dc_while_stunned[num_dc_while_stunned % MAX_DC_PROT] = steam_id;
             num_dc_while_stunned++;
-            num_stunned--;
         }
             
         is_fluttershy[client] = false;
@@ -568,13 +678,6 @@ public OnGameFrame()
         {
             if (is_fluttershy[i])
                 SetEntityHealth(i, displayed_health[i]);
-        }
-        
-        if (fake_body > -1)
-        {
-            new Float:vec[3];
-            GetEntPropVector(fake_body, Prop_Data, "m_angRotation", vec);
-            LogMessage("%f, %f, %f", vec[0], vec[1], vec[2]);
         }
     }
 }
@@ -693,7 +796,7 @@ FreezePlayer(victim, attacker, bool:is_shamed=false)
             GetArrayString(sounds[SND_FREEZE], GetRandomInt(0, GetArraySize(sounds[SND_FREEZE]) - 1), sound_path, sizeof(sound_path));
             EmitSoundToAll(sound_path, attacker);
         }
-        num_stunned++;
+        
         if (is_shamed)
         {
             PrintToChatAll(MSG_SHAME_TO_ALL, victim_name);
@@ -726,7 +829,6 @@ UnfreezePlayer(victim, attacker)
     
     if (!stun_immunity[victim] && TF2_IsPlayerInCondition(victim, TFCond_Dazed))
     {
-        num_stunned--;
         GetArrayString(sounds[SND_UNFREEZE], GetRandomInt(0, GetArraySize(sounds[SND_UNFREEZE]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path, victim);
         PrintToChatAll("%s has been unfrozen by %s!", victim_name, attacker_name);
@@ -972,10 +1074,7 @@ public FreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
 MakeFluttershy(client)
 {
     if (!is_fluttershy[client])
-    {
-        if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
-            num_stunned--;
-            
+    {          
         PrintToChatAll("%N is now a Fluttershy.", client);
         is_fluttershy[client] = true;
         ChangeClientTeam(client, TEAM_BLU);
@@ -985,8 +1084,6 @@ MakeFluttershy(client)
         displayed_health[client] = max_hp < 1000 ? max_hp : 1000;
         current_health[client] = max_hp;
         SetEntityHealth(client, displayed_health[client]);
-        num_fluttershys++;
-        num_red--;
     }
 }
 
@@ -1001,8 +1098,6 @@ ClearFluttershy(client, attacker)
         TF2_SetPlayerClass(client, TFClass_Soldier);
         TF2_RespawnPlayer(client);
         TF2_RegeneratePlayer(client);
-        num_fluttershys--;
-        num_red++;
         CheckWinCondition();
     }
 }
@@ -1081,19 +1176,26 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     }
     else
     {
+        // Handle class change manually
         new TFClassType:class_enum;
         if (ClassNameToEnum(class, class_enum))
         { 
+            if (reload_timer[client] != INVALID_HANDLE)
+            {
+                KillTimer(reload_timer[client]);
+                reload_timer[client] = INVALID_HANDLE;
+            }
             TF2_SetPlayerClass(client, class_enum);
             TF2_RespawnPlayer(client);
+            TF2_RegeneratePlayer(client);
         }
         return Plugin_Handled;
     }
 }
 
 public Action:TestCmd(client, args)
-{
-
+{ 
+    ReplyToCommand(client, "tf_logic_medieval %d", FindEntityByClassname(-1, "tf_logic_medieval"));
 }
 
 bool:IsRedClassAllowed(const String:class[])
@@ -1118,7 +1220,7 @@ bool:ClassNameToEnum(const String:class[], &TFClassType:class_enum)
         class_enum = TFClass_Medic;
     else if (StrEqual(class, "sniper", false))
         class_enum = TFClass_Sniper;
-    else if (StrEqual(class, "heavy", false))
+    else if (StrEqual(class, "heavyweap", false))
         class_enum = TFClass_Heavy;
     else if (StrEqual(class, "demoman", false))
         class_enum = TFClass_DemoMan;
@@ -1139,10 +1241,29 @@ bool:ClassNameToEnum(const String:class[], &TFClassType:class_enum)
 CheckWinCondition()
 {
     decl String:sound_path[PLATFORM_MAX_PATH];
+    new bool:fluttershy_exists = false;
+    new bool:all_players_stunned = true;
     new clientid;
-     
-    // There are no Fluttershys remaining, print the winners
-    if (num_fluttershys == 0)
+    
+    if (win_conditions_checked)
+        return;
+    
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i))
+        {
+            if (is_fluttershy[i])
+            {
+                fluttershy_exists = true;
+            }
+            else if (!TF2_IsPlayerInCondition(i, TFCond_Dazed))
+            {
+                all_players_stunned = false;
+            }
+        }
+    }
+    
+    if (!fluttershy_exists)
     {
         GetArrayString(sounds[SND_LOSS], GetRandomInt(0, GetArraySize(sounds[SND_LOSS]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path);
@@ -1155,14 +1276,11 @@ CheckWinCondition()
                 PrintToChatAll("- %N", clientid);
         }
         
+        win_conditions_checked = true;
         SetVariantInt(TEAM_RED);
         AcceptEntityInput(master_cp, "SetWinner");
-        return;
     }
-    
-    // Did the Fluttershys win
-    // TODO: Check if time has run out
-    if (num_stunned == num_red)
+    else if (all_players_stunned)
     {
         GetArrayString(sounds[SND_WIN], GetRandomInt(0, GetArraySize(sounds[SND_WIN]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path);
@@ -1180,50 +1298,8 @@ CheckWinCondition()
                 PrintToChatAll("- %N", clientid);
         }     
       
+        win_conditions_checked = true;
         SetVariantInt(TEAM_BLU);
         AcceptEntityInput(master_cp, "SetWinner");
     }
-}
-
-public SpawnIceStatue(client)
-{
-    new Float:player_position[3];
-
-    fake_body = CreateEntityByName("tf_ragdoll");
-    //SetEntityRenderMode(client, RENDER_TRANSCOLOR);
-    //SetEntityRenderColor(client, 218, 241, 250, 255);
-    
-    
-    if (DispatchSpawn(fake_body))
-    {
-        GetClientAbsOrigin(client, player_position);
-        new offset = FindSendPropOffs("CTFRagdoll", "m_vecRagdollOrigin");
-        SetEntDataVector(fake_body, offset, player_position);
-        
-        player_position[0] = 0.0;
-        player_position[1] = 0.0;
-        player_position[2] = 0.0;
-        offset = FindSendPropOffs("CTFRagdoll", "m_vecRagdollVelocity");
-        SetEntDataVector(fake_body, offset, player_position);
-        
-        offset = FindSendPropOffs("CTFRagdoll", "m_vecForce");
-        SetEntDataVector(fake_body, offset, player_position);
-        
-        offset = FindSendPropOffs("CTFRagdoll", "m_iClass");
-        SetEntData(fake_body, offset, 8);
-
-        offset = FindSendPropOffs("CTFRagdoll", "m_iPlayerIndex");
-        SetEntData(fake_body, offset, client);
-        
-        offset = FindSendPropOffs("CTFRagdoll", "m_bIceRagdoll");
-        SetEntData(fake_body, offset, true);
-        
-        new team = GetClientTeam(client);
-        offset = FindSendPropOffs("CTFRagdoll", "m_iTeam");
-        SetEntData(fake_body, offset, team);
-        
-        //g_Ragdoll[client] = fake_body;
-        
-        return;
-    }		
 }
