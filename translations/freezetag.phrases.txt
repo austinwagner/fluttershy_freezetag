@@ -1,0 +1,128 @@
+"Phrases"
+{
+    "ClearFluttershy"
+    {
+        "#format"       "{1:s}"
+        "en"            "The Guardians have rescinded {1}'s Flutterhood!"
+    }
+    
+    "ShameAll"
+    {
+        "#format"       "{1:s}"
+        "en"            "Hey everybody, {1} tried to cheat his way out of a freeze. Let's all point and laugh!"
+    }
+    
+    "ShamePlayer"
+    {
+        "en"           "You cannot join a team until the round is over." 
+    }
+    
+    "FileNoExist"
+    {
+        "#format"       "{1:s}"
+        "en"            "File {1} does not exist."
+    }
+    
+    "FileNoExist"
+    {
+        "#format"       "{1:s}"
+        "en"            "File {1} does not exist."
+    }
+    
+    "SoundConfFail"
+    {
+        "en"            "Could not open sound configuration file."
+    }
+    
+    "MinigunReloading"
+    {
+        "en"            "Minigun reloading..."
+    }
+    
+    "MinigunReloaded"
+    {
+        "en"            "Minigun reloaded."
+    }
+    
+    "FlamethrowerReloading"
+    {
+        "en"            "Flamethrower reloading..."
+    }
+    
+    "FlamethrowerReloaded"
+    {
+        "en"            "Flamethrower reloaded."
+    }
+    
+    "PlayerDefeat"
+    {
+        "#format"       "{1:s},{2:s}"
+        "en"            "{1} has defeated {2}!"
+    }
+    
+    "CurrentHealth"
+    {
+        "#format"       "{1:d}"
+        "en"            "Current Health: {1}"
+    }
+    
+    "PlayerFrozen"
+    {
+        "#format"       "{1:s},{2:s}"
+        "en"            "{1} frozen by {2}."
+    }
+    
+    "PlayerUnfrozen"
+    {
+        "#format"       "{1:s},{2:s}"
+        "en"            "{1} has been unfrozen by {2}!"
+    }
+    
+    "SelectMenuTitle"
+    {
+        "en"            "Select a player:"
+    }
+    
+    "AmbiguousPlayer"
+    {
+        "#format"       "{1:s}"
+        "en"            "Ambiguous player name '{1}'."
+    }
+    
+    "PlayerNotFound"
+    {
+        "#format"       "{1:s}"
+        "en"            "Could not find player '{1}'."
+    }
+    
+    "MadeFluttershy"
+    {
+        "#format"       "{1:s}"
+        "en"            "{1} is now a Fluttershy."
+    }
+    
+    "FluttershyClassError"
+    {
+        "en"            "Fluttershys cannot change class!"
+    }
+    
+    "FrozenClassError"
+    {
+        "en"            "You cannot change class while frozen!"
+    }
+    
+    "FluttershyWin"
+    {
+        "en"            "The Fluttershys have won!"
+    }
+    
+    "FluttershyLose"
+    {
+        "en"            "The Fluttershys have been defeated!"
+    }
+    
+    "Winners"
+    {
+        "en"            "Winners: "
+    }
+}

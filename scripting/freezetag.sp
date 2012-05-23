@@ -6,9 +6,6 @@
 
 #define PLUGIN_VERSION "1.0.0"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
-#define MSG_CLEAR_FLUTTERSHY "The Guardians have rescinded %N's Flutterhood!"
-#define MSG_SHAME_TO_ALL "Hey everybody, %s tried to cheat his way out of a freeze. Let's all point and laugh!"
-#define MSG_SHAME_TO_PLAYER "You are frozen until the round is over."
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
 #define TEAM_RED 2
@@ -26,7 +23,7 @@ public Plugin:myinfo =
 {
 	name = "Fluttershy Freeze Tag",
 	author = "Ambit (idea by RogueDarkJedi)",
-	description = "Chrysalis is back and has her minions disguised as Fluttershy. Discord added some chaos into the mix by giving them magic sticks that freeze anything they hit. Stop these fakes from freezing everypony before it's too late!",
+	description = "Defeat the Fluttershys before they freeze everyone.",
 	version = PLUGIN_VERSION,
 	url = ""
 };
@@ -53,6 +50,7 @@ new Handle:minigun_ammo_cvar;
 new Handle:flamethrower_ammo_cvar;
 new Handle:airblast_cooldown_time_cvar;
 new Handle:round_time_cvar;
+new Handle:fluttershy_ratio_cvar;
 
 new max_hp;
 new Float:freeze_duration;
@@ -64,6 +62,7 @@ new minigun_ammo;
 new flamethrower_ammo;
 new Float:airblast_cooldown_time;
 new round_time;
+new Float:fluttershy_ratio;
 
 new bool:is_fluttershy[MAX_CLIENT_IDS];
 new displayed_health[MAX_CLIENT_IDS];
@@ -84,6 +83,7 @@ new bool:win_conditions_checked;
 
 public OnPluginStart()
 {    
+    LoadTranslations("freezetag.phrases");
     max_hp_cvar = CreateConVar("freezetag_max_hp", "2000", "The amount of life Fluttershys start with.", CVAR_FLAGS);
     freeze_duration_cvar = CreateConVar("freezetag_freeze_time", "120.0", "The amount of time in seconds a player will remain frozen for before automatically unfreezing.", CVAR_FLAGS);
     freeze_immunity_cvar = CreateConVar("freezetag_immunity_time", "2.0", "The amount of time in seconds during which a player cannot be unfrozen or refrozen.", CVAR_FLAGS);
@@ -94,6 +94,7 @@ public OnPluginStart()
     flamethrower_ammo_cvar = CreateConVar("freezetag_flamethrower_ammo", "100", "The maximum amount of ammo a Flamethrower can hold.", CVAR_FLAGS);
     airblast_cooldown_time_cvar = CreateConVar("freezetag_airblast_cooldown", "5.0", "The amount of time in seconds before a Pyro can airblast again.", CVAR_FLAGS);
     round_time_cvar = CreateConVar("freezetag_round_time", "300", "The amount of time in seconds that a round will last.", CVAR_FLAGS);
+    fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "9", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
@@ -106,6 +107,7 @@ public OnPluginStart()
     HookConVarChange(flamethrower_ammo_cvar, ConVarChanged);
     HookConVarChange(airblast_cooldown_time_cvar, ConVarChanged);
     HookConVarChange(round_time_cvar, ConVarChanged);
+    HookConVarChange(fluttershy_ratio_cvar, ConVarChanged);
     
     ff_cvar = FindConVar("mp_friendlyfire");
     scramble_teams_cvar = FindConVar("mp_scrambleteams_auto");
@@ -120,9 +122,9 @@ public OnPluginStart()
     RegConsoleCmd("flutts", MakeFluttershyCommand);
     RegConsoleCmd("unflutts", ClearFluttershyCommand);
     
-    RegConsoleCmd("tc", TestCmd);
-    
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
+    
+    AutoExecConfig(true, "freezetag");
     
     LoadSoundConfig();
     
@@ -162,13 +164,13 @@ LoadSoundConfig()
                 if (FileExists(full_path))
                     PushArrayString(sounds[section], line);
                 else
-                    LogError("File %s does not exist.", full_path);
+                    LogError("%T", "FileNoExist", LANG_SERVER, full_path);
             }
         }
     }
     else
     {
-        LogError("Could not open sound configuration file.") ;
+        LogError("%T", "SoundConfFail", LANG_SERVER);
     }
 }
 
@@ -188,6 +190,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         dc_while_stunned[i] = "";
     }
     
+    // Move everyone to RED and reset all of the arrays
     new num_red = 0;
     for (new i = 1; i <= MaxClients; i++)
     {
@@ -202,8 +205,9 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         }
     }
     
+    // Select players to become Fluttershys
     new num_fluttershys = 0;
-    new fshy_goal = RoundToCeil(FloatMul(float(num_red), 0.11111));
+    new fshy_goal = RoundToCeil(FloatMul(float(num_red), fluttershy_ratio));
     while (num_fluttershys < fshy_goal)
     {
         new client = GetRandomInt(1, MaxClients);
@@ -215,12 +219,14 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         }
     }
     
+    // Make sure all of the players are alive
     for (new i = 1; i <= MaxClients; i++)
     {
-        if (IsClientInGame(i))
+        if (IsClientInGame(i) && !IsClientObserver(i))
             TF2_RespawnPlayer(i);
     }
     
+    // Round end events go to this entity
     master_cp = FindEntityByClassname(-1, "team_control_point_master");
     if (master_cp == -1)
     {
@@ -229,10 +235,11 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         AcceptEntityInput(master_cp, "Enable");
     }
     
+    
+    // Configure the round timer
     new team_round_timer = FindEntityByClassname(-1, "team_round_timer");
     if (team_round_timer == -1)
-        DispatchSpawn(team_round_timer);
-        
+        DispatchSpawn(team_round_timer);    
     
     SetEntProp(team_round_timer, Prop_Send, "m_nSetupTimeLength", 0);
     SetEntProp(team_round_timer, Prop_Send, "m_bShowInHUD", 1);
@@ -240,77 +247,6 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     AcceptEntityInput(team_round_timer, "SetMaxTime");
     SetVariantInt(round_time);
     AcceptEntityInput(team_round_timer, "SetTime");
-    
-    SetupMap();
-}
-
-SetupMap()
-{
-    new entity;
-    decl String:model[128];
-    decl Float:teleport_location[3];
-    
-    teleport_location[0] = 0.0;
-    teleport_location[1] = 0.0;
-    teleport_location[2] = 0.0;
-    
-
-    entity = -1;
-    while ((entity = FindEntityByClassname(entity, "func_regenerate")) != -1)
-        AcceptEntityInput(entity, "Kill");
-
-    entity = -1;
-    while ((entity = FindEntityByClassname(entity, "func_respawnroomvisualizer")) != -1)
-        AcceptEntityInput(entity, "Kill");
-
-    entity = -1;
-    while ((entity = FindEntityByClassname(entity, "trigger_multiple")) != -1)
-        AcceptEntityInput(entity, "Kill");
-        
-    entity = -1;
-    while ((entity = FindEntityByClassname(entity, "trigger_capture_area")) != -1)
-        AcceptEntityInput(entity, "Kill");
-
-    entity = -1;   
-    while ((entity = FindEntityByClassname(entity, "team_control_point")) != -1)
-        TeleportEntity(entity, teleport_location, NULL_VECTOR, NULL_VECTOR);
-
-    entity = -1;   
-    while ((entity = FindEntityByClassname(entity, "item_ammopack_*")) != -1)
-        AcceptEntityInput(entity, "Kill");
- 
-    entity = -1;  
-    while ((entity = FindEntityByClassname(entity, "item_healthkit_*")) != -1)
-        AcceptEntityInput(entity, "Kill");
-
-    entity = -1;   
-    while ((entity = FindEntityByClassname(entity, "tf_logic_medieval")) != -1)
-        AcceptEntityInput(entity, "Kill");
-
-    entity = -1;
-    while ((entity = FindEntityByClassname(entity, "tf_logic_cp_timer")) != -1)
-        AcceptEntityInput(entity, "Kill");
-
-    entity = -1;   
-    while ((entity = FindEntityByClassname(entity, "func_capturezone")) != -1)
-        AcceptEntityInput(entity, "Kill");
- 
-    entity = -1;   
-    while ((entity = FindEntityByClassname(entity, "item_teamflag")) != -1)
-        AcceptEntityInput(entity, "Kill");
- 
-    entity = -1;  
-    while ((entity = FindEntityByClassname(entity, "prop_dynamic")) != -1)
-    {
-        GetEntPropString(entity, Prop_Data, "m_ModelName", model, sizeof(model));
-        if (StrEqual("models/props_gameplay/cap_point_base.mdl", model, false))
-            AcceptEntityInput(entity, "Kill");
-    }
-    
-    entity = -1;
-    while ((entity = FindEntityByClassname(entity, "func_door")) != -1)
-        AcceptEntityInput(entity, "Open");
-       
 }
 
 public ConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
@@ -329,6 +265,7 @@ LoadConVars()
     flamethrower_ammo = GetConVarInt(flamethrower_ammo_cvar);
     airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
     round_time = GetConVarInt(round_time_cvar);
+    fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
     enabled = GetConVarBool(enabled_cvar);
 }
 
@@ -344,6 +281,7 @@ LoadConVars2()
     flamethrower_ammo = GetConVarInt(flamethrower_ammo_cvar);
     airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
     round_time = GetConVarInt(round_time_cvar);
+    fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
 
     if (enabled != GetConVarBool(enabled_cvar))
     {
@@ -357,7 +295,6 @@ LoadConVars2()
 
 EnablePlugin()
 {
-    LogMessage("Enabling...");
     original_ff_val = GetConVarInt(ff_cvar);
     original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
     original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
@@ -387,10 +324,10 @@ EnablePlugin()
     }
     
     // Block team swapping and suicides
-    AddCommandListener(BlockCommandAll, "jointeam");
+    AddCommandListener(JoinTeamCommand, "jointeam");
     AddCommandListener(JoinClassCommand, "joinclass");
     AddCommandListener(BlockCommandFluttershy, "kill");
-    AddCommandListener(BlockCommandAll, "spectate");
+    AddCommandListener(SpectateCommand, "spectate");
     AddCommandListener(BlockCommandFluttershy, "explode");
     
     HookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
@@ -408,13 +345,15 @@ DisablePlugin()
     SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
     SetConVarInt(autobalance_cvar, original_autobalance_val);
     
-    RemoveCommandListener(BlockCommandAll, "jointeam");
+    RemoveCommandListener(JoinTeamCommand, "jointeam");
     RemoveCommandListener(JoinClassCommand, "joinclass");
     RemoveCommandListener(BlockCommandFluttershy, "kill");
-    RemoveCommandListener(BlockCommandAll, "spectate");
+    RemoveCommandListener(SpectateCommand, "spectate");
     RemoveCommandListener(BlockCommandFluttershy, "explode");
     
     UnhookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
+    UnhookEvent("teamplay_round_win", RoundEnd);
+    UnhookEvent("teamplay_round_stalemate", RoundEnd);
     
     for (new i = 1; i <= MaxClients; i++)
     {
@@ -449,6 +388,8 @@ public OnMapStart()
     decl String:path[PLATFORM_MAX_PATH];
     new size;
     
+    LoadTranslations("freezetag.phrases");
+    
     for (new i = 0; i < sizeof(sounds); i++)
     {
         size = GetArraySize(sounds[i]);
@@ -470,7 +411,11 @@ LoadSound(String:sound[])
     PrecacheSound(sound, true);
 }
 
-public PreThinkPost(client){
+public PreThinkPost(client) 
+{
+    if (IsClientObserver(client))
+        return;
+
     if (is_fluttershy[client] && GetPlayerWeaponSlot(client, SLOT_MELEE) > 0)
         SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", GetPlayerWeaponSlot(client, SLOT_MELEE));
     
@@ -488,7 +433,7 @@ public PreThinkPost(client){
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY))
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            PrintToChat(client, "Reloading minigun...");
+            PrintToChat(client, "%t", "MinigunReloading");
             SetEntData(client, ammo_offset + 4, 0, 4);
             reload_timer[client] = CreateTimer(minigun_reload_time, ReloadMinigun, client);
         }
@@ -503,7 +448,7 @@ public PreThinkPost(client){
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY)) 
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            PrintToChat(client, "Reloading flamethrower...");
+            PrintToChat(client, "%t", "FlamethrowerReloading");
             SetEntData(client, ammo_offset + 4, 0, 4);
             reload_timer[client] = CreateTimer(flamethrower_reload_time, ReloadFlamethrower, client);
         }
@@ -538,7 +483,7 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
 
 public Action:ResetAirblast(Handle:timer, any:client)
 {
-    if (IsClientInGame(client))
+    if (IsClientInGame(client) && !IsClientObserver(client))
     {
         airblast_cooldown[client] = false;
     }
@@ -547,9 +492,9 @@ public Action:ResetAirblast(Handle:timer, any:client)
 
 public Action:ReloadMinigun(Handle:timer, any:client)
 {
-    if (IsClientInGame(client))
+    if (IsClientInGame(client) && !IsClientObserver(client))
     {
-        PrintToChat(client, "Minigun reloaded.");
+        PrintToChat(client, "%t", "MinigunReloaded");
         SetEntData(client, ammo_offset + 4, minigun_ammo, 4);  
     }
     reload_timer[client] = INVALID_HANDLE;
@@ -557,9 +502,9 @@ public Action:ReloadMinigun(Handle:timer, any:client)
 
 public Action:ReloadFlamethrower(Handle:timer, any:client)
 {
-    if (IsClientInGame(client))
+    if (IsClientInGame(client) && !IsClientObserver(client))
     {
-        PrintToChat(client, "Flamethrower reloaded.");
+        PrintToChat(client, "%t", "FlamethrowerReloaded");
         SetEntData(client, ammo_offset + 4, flamethrower_ammo, 4);    
     }
     reload_timer[client] = INVALID_HANDLE;
@@ -638,10 +583,6 @@ public Action:OnSpawn(client)
         TF2_RespawnPlayer(client);
         ShowVGUIPanel(client, "class_red"); 
     }
-    else if (!is_fluttershy[client] && ShouldShame(client))
-    {
-        FreezePlayer(client, 0, true);
-    }
     
     return Plugin_Continue;
 }
@@ -684,6 +625,12 @@ public OnGameFrame()
 
 public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, weapon, const Float:damageForce[3], const Float:damagePosition[3])
 {
+    decl String:victim_name[MAX_NAME_LENGTH];
+    decl String:attacker_name[MAX_NAME_LENGTH];
+    
+    GetCustomClientName(victim, victim_name, sizeof(victim_name));
+    GetCustomClientName(attacker, attacker_name, sizeof(attacker_name));
+    
     // The player is supposed to die, do not modify damage
     if (bypass_immunity[victim])
     {
@@ -697,7 +644,7 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
         {
             killer[num_killers] = GetClientUserId(attacker);
             num_killers++;
-            PrintToChatAll("%N has defeated %N!", attacker, victim);
+            PrintToChatAll("%t", "PlayerDefeat",  attacker_name, victim_name);
             ClearFluttershy(victim, attacker);
         }
         else
@@ -707,7 +654,7 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
             // Refill the life bar and display to the user the multiple of 1000 that his life is now counting down from
             if (displayed_health[victim] <= 0)
             {
-                PrintToChat(victim, "Current Health: %d", current_health[victim]);
+                PrintToChat(victim, "%t", "CurrentHealth", current_health[victim]);
                 displayed_health[victim] = current_health[victim] - ((current_health[victim] / 1000) * 1000);
             }
             
@@ -780,7 +727,7 @@ bool:IsWorldDeath(attacker)
     return attacker > MaxClients;
 }
 
-FreezePlayer(victim, attacker, bool:is_shamed=false)
+FreezePlayer(victim, attacker)
 {
     decl String:victim_name[MAX_NAME_LENGTH];
     decl String:attacker_name[MAX_NAME_LENGTH];
@@ -788,31 +735,15 @@ FreezePlayer(victim, attacker, bool:is_shamed=false)
     
     GetCustomClientName(victim, victim_name, sizeof(victim_name));
     GetCustomClientName(attacker, attacker_name, sizeof(attacker_name));
-      
-    if (!stun_immunity[victim] && !TF2_IsPlayerInCondition(victim, TFCond_Dazed))
-    {   
-        if (attacker > 0)
-        {
-            GetArrayString(sounds[SND_FREEZE], GetRandomInt(0, GetArraySize(sounds[SND_FREEZE]) - 1), sound_path, sizeof(sound_path));
-            EmitSoundToAll(sound_path, attacker);
-        }
-        
-        if (is_shamed)
-        {
-            PrintToChatAll(MSG_SHAME_TO_ALL, victim_name);
-            PrintToChat(victim, MSG_SHAME_TO_PLAYER);
-            ShowVGUIPanel(victim, "class_red", _, false);
-            TF2_SetPlayerClass(victim, TFClass_Scout);
-            TF2_StunPlayer(victim, SHAME_STUN_DURATION, 0.0, TF_STUNFLAG_BONKSTUCK, attacker);
-        }
-        else if ((attacker > 0 && !TF2_IsPlayerInCondition(victim, TFCond_Bonked)) || attacker <= 0)
-        {
-            PrintToChatAll("%s frozen by %s.", victim_name, attacker_name);
-            CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
-            TF2_RemoveCondition(victim, TFCond_Bonked); // Prevent bonk from blocking admin freeze
-            TF2_StunPlayer(victim, freeze_duration, 0.0, TF_STUNFLAG_BONKSTUCK, attacker);
-        }
-          
+              
+    if (!stun_immunity[victim] && ((attacker > 0 && !TF2_IsPlayerInCondition(victim, TFCond_Dazed)) || attacker <= 0))
+    {
+        GetArrayString(sounds[SND_FREEZE], GetRandomInt(0, GetArraySize(sounds[SND_FREEZE]) - 1), sound_path, sizeof(sound_path));
+        EmitSoundToAll(sound_path, attacker);
+        PrintToChatAll("%t", "PlayerFrozen", victim_name, attacker_name);
+        CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
+        TF2_RemoveCondition(victim, TFCond_Dazed); // Prevent bonk from blocking admin freeze
+        TF2_StunPlayer(victim, freeze_duration, 0.0, TF_STUNFLAG_BONKSTUCK, attacker);
         stun_immunity[victim] = true;
         CheckWinCondition();
     }
@@ -831,7 +762,7 @@ UnfreezePlayer(victim, attacker)
     {
         GetArrayString(sounds[SND_UNFREEZE], GetRandomInt(0, GetArraySize(sounds[SND_UNFREEZE]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path, victim);
-        PrintToChatAll("%s has been unfrozen by %s!", victim_name, attacker_name);
+        PrintToChatAll("%t", "PlayerUnfrozen", victim_name, attacker_name);
         TF2_RemoveCondition(victim, TFCond_Dazed);
         stun_immunity[victim] = true;
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
@@ -912,11 +843,13 @@ SelectPlayer(client, MenuHandler:handler, String:search_name[])
 {
     decl String:user_id[16];
     decl String:name[MAX_NAME_LENGTH];
+    decl String:menu_title[128];
     
     if (search_name[0] == '\0')
     {
         new Handle:menu = CreateMenu(handler);
-        SetMenuTitle(menu, "Select a player:");
+        Format(menu_title, sizeof(menu_title), "%T", "SelectPlayerMenu", client);
+        SetMenuTitle(menu, menu_title);
         for (new i = 1; i <= MaxClients; i++)
         {
             if (IsClientInGame(i))
@@ -960,7 +893,7 @@ SelectPlayer(client, MenuHandler:handler, String:search_name[])
                 {
                     if (target != -1)
                     {
-                        ReplyToCommand(client, "Ambiguous player name '%s'.", search_name[startidx]);
+                        ReplyToCommand(client, "%t", "AmbiguousPlayer", search_name[startidx]);
                         return -1;
                     }
                     else
@@ -976,7 +909,7 @@ SelectPlayer(client, MenuHandler:handler, String:search_name[])
         }
         else
         {
-            ReplyToCommand(client, "Could not find player '%s'.", search_name[startidx]);
+            ReplyToCommand(client, "%t", "PlayerNotFound", search_name[startidx]);
             return -1;
         }
     }
@@ -992,8 +925,9 @@ public Action:ClearFluttershyCommand(client, args)
      
     new target = SelectPlayer(client, ClearFluttershyMenuHandler, name);
     if (target > 0)
-    {
-        PrintToChatAll(MSG_CLEAR_FLUTTERSHY, target);
+    {     
+        GetCustomClientName(target, name, sizeof(name));
+        PrintToChatAll("%t", "ClearFluttershy", name);
         ClearFluttershy(target, 0);
     }
         
@@ -1003,6 +937,7 @@ public Action:ClearFluttershyCommand(client, args)
 public ClearFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2)
 {
     decl String:info[32];
+    decl String:name[MAX_NAME_LENGTH];
 
     if (action == MenuAction_Select)
     {
@@ -1010,7 +945,8 @@ public ClearFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2
         new target = GetClientOfUserId(StringToInt(info));
         if (IsClientInGame(target))
         {
-            PrintToChatAll(MSG_CLEAR_FLUTTERSHY, target);
+            GetCustomClientName(target, name, sizeof(name));
+            PrintToChatAll("%t", "ClearFluttershy", name);
             ClearFluttershy(target, 0);
         }
     }
@@ -1073,9 +1009,12 @@ public FreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
 
 MakeFluttershy(client)
 {
+    decl String:name[MAX_NAME_LENGTH];
+    
     if (!is_fluttershy[client])
     {          
-        PrintToChatAll("%N is now a Fluttershy.", client);
+        GetCustomClientName(client, name, sizeof(name));
+        PrintToChatAll("%t", "MadeFluttershy", name);
         is_fluttershy[client] = true;
         ChangeClientTeam(client, TEAM_BLU);
         TF2_SetPlayerClass(client, TFClass_Medic);
@@ -1140,9 +1079,32 @@ public Action:RemoveExplosion(Handle:timer, any:ent)
     } 
 }  
 
-public Action:BlockCommandAll(client, const String:command[], argc)
+public Action:JoinTeamCommand(client, const String:command[], argc)
 {
-    return Plugin_Handled;
+    decl String:team[10];
+    decl String:name[MAX_NAME_LENGTH];
+    
+    GetCmdArg(1, team, sizeof(team));
+    if (IsClientObserver(client) && !ShouldShame(client))
+    {
+        return Plugin_Continue;
+    }
+    else if (StrEqual(team, "spectate"))
+    {
+        SpectateCommand(client, "spectate", 0);
+        return Plugin_Continue;
+    }
+    else if (ShouldShame(client))
+    {
+        GetCustomClientName(client, name, sizeof(name));
+        PrintToChatAll("%t", "ShameAll", name);
+        PrintToChat(client, "%t", "ShamePlayer");
+        return Plugin_Handled;
+    }
+    else
+    {
+        return Plugin_Handled;
+    }
 }
 
 public Action:BlockCommandFluttershy(client, const String:command[], argc)
@@ -1153,6 +1115,13 @@ public Action:BlockCommandFluttershy(client, const String:command[], argc)
         return Plugin_Continue;
 }
 
+public Action:SpectateCommand(client, const String:command[], argc)
+{
+    if (!IsClientObserver(client))
+        OnClientDisconnect(client);
+    return Plugin_Continue;
+}
+
 public Action:JoinClassCommand(client, const String:command[], argc)
 {
     decl String:class[10];
@@ -1161,12 +1130,12 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     
     if (is_fluttershy[client])
     {
-        PrintToChat(client, "Fluttershys cannot change class!");
+        PrintToChat(client, "%t", "FluttershyClassError");
         return Plugin_Handled;
     }
     else if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
     {
-        PrintToChat(client, "You cannot change class while frozen!");
+        PrintToChat(client, "%t", "FrozenClassError");
         return Plugin_Handled;
     }
     else if (!IsRedClassAllowed(class))
@@ -1192,12 +1161,6 @@ public Action:JoinClassCommand(client, const String:command[], argc)
         return Plugin_Handled;
     }
 }
-
-public Action:TestCmd(client, args)
-{ 
-    ReplyToCommand(client, "tf_logic_medieval %d", FindEntityByClassname(-1, "tf_logic_medieval"));
-}
-
 bool:IsRedClassAllowed(const String:class[])
 {
     new TFClassType:class_enum;
@@ -1250,7 +1213,7 @@ CheckWinCondition()
     
     for (new i = 1; i <= MaxClients; i++)
     {
-        if (IsClientInGame(i))
+        if (IsClientInGame(i) && !IsClientObserver(i))
         {
             if (is_fluttershy[i])
             {
@@ -1267,8 +1230,8 @@ CheckWinCondition()
     {
         GetArrayString(sounds[SND_LOSS], GetRandomInt(0, GetArraySize(sounds[SND_LOSS]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path);
-        PrintToChatAll("The Fluttershys have been defeated!");
-        PrintToChatAll("Winners:");
+        PrintToChatAll("%t", "FluttershyLose");
+        PrintToChatAll("%t", "Winners");
         for (new i = 0; i < num_killers; i++)
         {
             clientid = GetClientOfUserId(killer[i]) ;
@@ -1284,8 +1247,8 @@ CheckWinCondition()
     {
         GetArrayString(sounds[SND_WIN], GetRandomInt(0, GetArraySize(sounds[SND_WIN]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path);
-        PrintToChatAll("The Fluttershys have won!");
-        PrintToChatAll("Winners:");
+        PrintToChatAll("%t", "FluttershyWin");
+        PrintToChatAll("%t", "Winners");
         for (new i = 1; i <= MaxClients; i++)
         {
             if (is_fluttershy[i])
