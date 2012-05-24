@@ -72,18 +72,24 @@ new bool:stun_immunity[MAX_CLIENT_IDS];
 new String:dc_while_stunned[MAX_DC_PROT][20];
 new bool:airblast_cooldown[MAX_CLIENT_IDS];
 new Handle:airblast_timer[MAX_CLIENT_IDS];
+new Handle:reload_timer[MAX_CLIENT_IDS];
+
 new killer[4];
 new num_killers;
 new num_dc_while_stunned;
 new ammo_offset;
-new Handle:reload_timer[MAX_CLIENT_IDS];
 new master_cp = -1;
 new bool:win_conditions_checked;
 
 
+/**
+ * The starting point of the plugin. Called when the plugin is first loaded.
+ */
 public OnPluginStart()
 {    
     LoadTranslations("freezetag.phrases");
+    
+    // Create Console Variables
     max_hp_cvar = CreateConVar("freezetag_max_hp", "2000", "The amount of life Fluttershys start with.", CVAR_FLAGS);
     freeze_duration_cvar = CreateConVar("freezetag_freeze_time", "120.0", "The amount of time in seconds a player will remain frozen for before automatically unfreezing.", CVAR_FLAGS);
     freeze_immunity_cvar = CreateConVar("freezetag_immunity_time", "2.0", "The amount of time in seconds during which a player cannot be unfrozen or refrozen.", CVAR_FLAGS);
@@ -109,13 +115,26 @@ public OnPluginStart()
     HookConVarChange(round_time_cvar, ConVarChanged);
     HookConVarChange(fluttershy_ratio_cvar, ConVarChanged);
     
+    // Get the current values for all of the console variables
+    max_hp = GetConVarInt(max_hp_cvar);
+    freeze_duration = GetConVarFloat(freeze_duration_cvar);
+    freeze_immunity_time = GetConVarFloat(freeze_immunity_cvar);
+    minigun_reload_time = GetConVarFloat(minigun_reload_time_cvar);
+    flamethrower_reload_time = GetConVarFloat(flamethrower_reload_time_cvar);
+    minigun_ammo = GetConVarInt(minigun_ammo_cvar);
+    flamethrower_ammo = GetConVarInt(flamethrower_ammo_cvar);
+    airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
+    round_time = GetConVarInt(round_time_cvar);
+    fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
+    enabled = GetConVarBool(enabled_cvar);
+    
+    // Get the default TF2 convars that will need to be changed
     ff_cvar = FindConVar("mp_friendlyfire");
     scramble_teams_cvar = FindConVar("mp_scrambleteams_auto");
     teams_unbalance_cvar = FindConVar("mp_teams_unbalance_limit");
     autobalance_cvar = FindConVar("mp_autoteambalance");
     
-    LoadConVars();
-    
+    // Register admin commands for rearranging players and debugging
     RegAdminCmd("unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
     RegAdminCmd("freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
     RegAdminCmd("flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
@@ -131,6 +150,9 @@ public OnPluginStart()
         EnablePlugin();
 }
 
+/**
+ * Read the sound configuration file located in $GAME_ROOT/cfg/sourcemod/freezetagsounds.cfg.
+ */
 LoadSoundConfig()
 {
     decl String:line[PLATFORM_MAX_PATH];
@@ -173,11 +195,25 @@ LoadSoundConfig()
     }
 }
 
+/**
+ * Event handler for when the round timer expires.
+ * 
+ * @param event An handle to the event that triggered this callback.
+ * @param name The name of the event that triggered this callback.
+ * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
+ */
 public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 {
     CheckWinCondition();
 }
 
+/**
+ * Event handler for the start of a new round.
+ * 
+ * @param event An handle to the event that triggered this callback.
+ * @param name The name of the event that triggered this callback.
+ * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
+ */
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
     num_killers = 0;
@@ -248,57 +284,63 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     AcceptEntityInput(team_round_timer, "SetTime");
 }
 
+/**
+ * Callback for when a console variable is changed.
+ * 
+ * @param convar The handle of the console variable that was changed.
+ * @param oldValue The value of the console variable before this event.
+ * @param newValue The value of the console variable after this event.
+ */
 public ConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
 {
-    LoadConVars2();
-}
-
-LoadConVars()
-{
-    max_hp = GetConVarInt(max_hp_cvar);
-    freeze_duration = GetConVarFloat(freeze_duration_cvar);
-    freeze_immunity_time = GetConVarFloat(freeze_immunity_cvar);
-    minigun_reload_time = GetConVarFloat(minigun_reload_time_cvar);
-    flamethrower_reload_time = GetConVarFloat(flamethrower_reload_time_cvar);
-    minigun_ammo = GetConVarInt(minigun_ammo_cvar);
-    flamethrower_ammo = GetConVarInt(flamethrower_ammo_cvar);
-    airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
-    round_time = GetConVarInt(round_time_cvar);
-    fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
-    enabled = GetConVarBool(enabled_cvar);
-}
-
-// Temp workaround
-LoadConVars2()
-{
-    max_hp = GetConVarInt(max_hp_cvar);
-    freeze_duration = GetConVarFloat(freeze_duration_cvar);
-    freeze_immunity_time = GetConVarFloat(freeze_immunity_cvar);
-    minigun_reload_time = GetConVarFloat(minigun_reload_time_cvar);
-    flamethrower_reload_time = GetConVarFloat(flamethrower_reload_time_cvar);
-    minigun_ammo = GetConVarInt(minigun_ammo_cvar);
-    flamethrower_ammo = GetConVarInt(flamethrower_ammo_cvar);
-    airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
-    round_time = GetConVarInt(round_time_cvar);
-    fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
-
-    if (enabled != GetConVarBool(enabled_cvar))
+    switch (convar)
     {
-        enabled = GetConVarBool(enabled_cvar);
-        if (enabled)
+    case max_hp_cvar:
+        max_hp = GetConVarInt(convar);
+    case freeze_duration_cvar:
+        freeze_duration = GetConVarFloat(convar);
+    case freeze_immunity_cvar:
+        freeze_immunity_time = GetConVarFloat(convar);
+    case minigun_reload_time_cvar:
+        minigun_reload_time = GetConVarFloat(convar);
+    case flamethrower_reload_time_cvar:
+        flamethrower_reload_time = GetConVarFloat(convar);
+    case minigun_ammo_cvar:
+        minigun_ammo = GetConVarInt(convar);
+    case flamethrower_ammo_cvar:
+        flamethrower_ammo = GetConVarInt(convar);
+    case airblast_cooldown_time_cvar:
+        airblast_cooldown_timer = GetConVarFloat(convar);
+    case round_time_cvar:
+        round_time = GetConVarInt(convar);
+    case fluttershy_ratio_cvar:
+        fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(convar)));
+    case enabled_cvar:
+    {
+        if (GetConVarBool(convar))
             EnablePlugin();
         else
             DisablePlugin();
     }
 }
 
+/**
+ * Turns on the plugin. Hooks required functions and initializes variables.
+ */
 EnablePlugin()
 {
+    if (enabled)
+        return;
+    
+    enabled = true;
+    
+    // Save convars to restore them to their original state when the plubun is unloaded
     original_ff_val = GetConVarInt(ff_cvar);
     original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
     original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
     original_autobalance_val = GetConVarInt(autobalance_cvar);
     
+    // Set convars to make the unfreezing and stacked teams work
     SetConVarInt(ff_cvar, 1);
     SetConVarInt(scramble_teams_cvar, 0);
     SetConVarInt(teams_unbalance_cvar, 0);
@@ -330,20 +372,29 @@ EnablePlugin()
     AddCommandListener(BlockCommandFluttershy, "explode");
     
     HookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
-    
     HookEvent("teamplay_round_win", RoundEnd);
     HookEvent("teamplay_round_stalemate", RoundEnd);
     
     ServerCommand("mp_restartgame_immediate 1");
 }
 
+/**
+ * Turns of the plugin. Unhooks events and restores console variables.
+ */
 DisablePlugin()
 {
+    if (!enabled)
+        return;
+    
+    enabled = false;
+    
+    // Restore convars to original state
     SetConVarInt(ff_cvar, original_ff_val);
     SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
     SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
     SetConVarInt(autobalance_cvar, original_autobalance_val);
     
+    // Unhook commands
     RemoveCommandListener(JoinTeamCommand, "jointeam");
     RemoveCommandListener(JoinClassCommand, "joinclass");
     RemoveCommandListener(BlockCommandFluttershy, "kill");
@@ -354,6 +405,7 @@ DisablePlugin()
     UnhookEvent("teamplay_round_win", RoundEnd);
     UnhookEvent("teamplay_round_stalemate", RoundEnd);
     
+    // Remove SDKHooks player event hooks
     for (new i = 1; i <= MaxClients; i++)
     {
         if (IsClientInGame(i))
@@ -382,6 +434,9 @@ DisablePlugin()
     ServerCommand("mp_restartgame_immediate 1");
 }
 
+/**
+ * Called when the map is first loaded.
+ */
 public OnMapStart()
 {
     decl String:path[PLATFORM_MAX_PATH];
@@ -400,6 +455,12 @@ public OnMapStart()
     }
 }
 
+/**
+ * Prepare a sound for use later. Adds the sound to the download table
+ * and precaches the sound.
+ *
+ * @param sound The path to the sound file relative to the $GAME_ROOT\sound\ directory.
+ */
 LoadSound(String:sound[])
 {
     decl String:path[PLATFORM_MAX_PATH];
@@ -410,14 +471,21 @@ LoadSound(String:sound[])
     PrecacheSound(sound, true);
 }
 
+/**
+ * Event handler for a post hook on PreThink.
+ *
+ * @param client Index of the client.
+ */
 public PreThinkPost(client) 
 {
     if (IsClientObserver(client))
         return;
 
+    // Force Fluttershys to equip melee weapon
     if (is_fluttershy[client] && GetPlayerWeaponSlot(client, SLOT_MELEE) > 0)
         SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", GetPlayerWeaponSlot(client, SLOT_MELEE));
     
+    // Slow scouts to 100% move speed
     if (!is_fluttershy[client] && TF2_GetPlayerClass(client) == TFClass_Scout)
         SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
     
@@ -454,12 +522,25 @@ public PreThinkPost(client)
     }
     else
     {
+        // Give 99 primary weapon ammo
         SetEntData(client, ammo_offset + 4, 99, 4);
     }
     
+    // Give 99 secondary weapon ammo
     SetEntData(client, ammo_offset + 8, 99, 4);
 }
 
+/**
+ * Handler for when a client's movement buttons are processed.
+ *
+ * @param client Index of the client.
+ * @param buttons Bitflags representing the buttons the player is pressing.
+ * @param impulse The current impulse command.
+ * @param vel Player's desired velocity.
+ * @param angles Player's desired view angles.
+ * @param weapon Entity index of the new weapon if the player switches weapons, otherwise 0.
+ * @return Plugin_Handled, Plugin_Continue, or Plugin_Changed to indicate how the original event should be processed
+ */
 public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:angles[3], &weapon)
 {
     if (enabled)
@@ -480,6 +561,12 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
     return Plugin_Continue;
 }
 
+/**
+ * Timer callback to reenable a player's airblast.
+ * 
+ * @param timer A handle to the timer that triggered this callback.
+ * @param client Index of the client.
+ */
 public Action:ResetAirblast(Handle:timer, any:client)
 {
     if (IsClientInGame(client) && !IsClientObserver(client))
@@ -489,6 +576,12 @@ public Action:ResetAirblast(Handle:timer, any:client)
     airblast_timer[client] = INVALID_HANDLE;
 }
 
+/**
+ * Timer callback to reload a player's minigun.
+ * 
+ * @param timer A handle to the timer that triggered this callback.
+ * @param client Index of the client.
+ */
 public Action:ReloadMinigun(Handle:timer, any:client)
 {
     if (IsClientInGame(client) && !IsClientObserver(client))
@@ -499,6 +592,12 @@ public Action:ReloadMinigun(Handle:timer, any:client)
     reload_timer[client] = INVALID_HANDLE;
 }
 
+/**
+ * Timer callback to reload a player's flamethrower.
+ * 
+ * @param timer A handle to the timer that triggered this callback.
+ * @param client Index of the client.
+ */
 public Action:ReloadFlamethrower(Handle:timer, any:client)
 {
     if (IsClientInGame(client) && !IsClientObserver(client))
@@ -509,12 +608,19 @@ public Action:ReloadFlamethrower(Handle:timer, any:client)
     reload_timer[client] = INVALID_HANDLE;
 }
 
+/**
+ * Called when the plugin is being unloaded.
+ */
 public OnPluginEnd()
 {
-    if (enabled)
-        DisablePlugin();
+    DisablePlugin();
 }
 
+/**
+ * Called when a new player joins the server.
+ *
+ * @param client Index of the client.
+ */
 public OnClientPutInServer(client)
 {
     if (enabled)
@@ -529,6 +635,11 @@ public OnClientPutInServer(client)
     }
 }
 
+/**
+ * Called when a player leaves the server.
+ *
+ * @param client Index of the client.
+ */
 public OnClientDisconnect(client)
 {
     decl String:steam_id[20];
@@ -537,6 +648,7 @@ public OnClientDisconnect(client)
     {
         is_fluttershy[client] = false;
             
+        // If a player disconnected while stunned, make a note of it
         if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
         {
             GetClientAuthString(client, steam_id, sizeof(steam_id));
@@ -547,8 +659,6 @@ public OnClientDisconnect(client)
         is_fluttershy[client] = false;
         bypass_immunity[client] = false;
         stun_immunity[client] = false;
-        
-        CheckWinCondition();
         
         if (reload_timer[client] != INVALID_HANDLE)
         {
@@ -561,9 +671,18 @@ public OnClientDisconnect(client)
             KillTimer(airblast_timer[client]);
             airblast_timer[client] = INVALID_HANDLE;
         }
+        
+        // It is possible that the disconnected player caused the win condition to be met
+        CheckWinCondition();  
     }
 }
 
+/**
+ * Handler for when a player spawns.
+ *
+ * @param client Index of the client.
+ * @return Plugin_Handled, Plugin_Continue, or Plugin_Changed to indicate how the original event should be processed
+ */
 public Action:OnSpawn(client)
 {
     if (!is_fluttershy[client] && GetClientTeam(client) != TEAM_RED)
@@ -578,6 +697,9 @@ public Action:OnSpawn(client)
     }
     else if (GetClientTeam(client) == TEAM_RED && !IsRedClassAllowedByEnum(TF2_GetPlayerClass(client)))
     {       
+        // If the player spawns as an invalid class, force them to change
+        // Automatically sets them to soldier so they can't just cancel the forced
+        // class change.
         TF2_SetPlayerClass(client, TFClass_Soldier);
         TF2_RespawnPlayer(client);
         ShowVGUIPanel(client, "class_red"); 
@@ -586,7 +708,14 @@ public Action:OnSpawn(client)
     return Plugin_Continue;
 }
 
-bool:ShouldShame(client)
+/**
+ * Checks if a player is on the list of players that disconnected or spectated
+ * while they were stunned.
+ *
+ * @param client Index of the client.
+ * @return True if the player was on the shame list, otherwise false.
+ */
+ bool:ShouldShame(client)
 {
     decl String:steam_id[20];
     
@@ -601,6 +730,13 @@ bool:ShouldShame(client)
     return false;
 }
 
+/**
+ * Event handler for a player attempting to switch weapons.
+ * 
+ * @param client Index of the client.
+ * @param weapon Entity index of the weapon that the player is switching to.
+ * @return Plugin_Continue if the player is allowed to switch weapons, otherwise Plugin_Handled.
+ */
 public Action:WeaponCanSwitchTo(client, weapon)
 {
     if (!is_fluttershy[client] || GetPlayerWeaponSlot(client, SLOT_MELEE) < 0 || weapon == GetPlayerWeaponSlot(client, SLOT_MELEE))
@@ -609,6 +745,9 @@ public Action:WeaponCanSwitchTo(client, weapon)
         return Plugin_Handled;
 }
 
+/**
+ * Called at the start of every server frame.
+ */
 public OnGameFrame()
 {
     if (enabled)
@@ -622,6 +761,19 @@ public OnGameFrame()
     }
 }
 
+/**
+ * Post event handler for a player taking damage. Values in here cannot be modified,
+ * but correctly represent the amount of damage the victim took.
+ *
+ * @param victim Index of the victim.
+ * @param attacker Index of the attacker.
+ * @param inflictor Entity index of the damage inflictor (usually the same as attacker).
+ * @param damage The amount of damage that the victim took.
+ * @param damagetype Bitflags for the type of damage that the victim took.
+ * @param weapon Entity index of the weapon that the victim was injured with.
+ * @param damageForce A vector representing the amount of force the weapon applied to the victim.
+ * @param damagePosition A vector representing the location that the damage came from.
+ */
 public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, weapon, const Float:damageForce[3], const Float:damagePosition[3])
 {
     decl String:victim_name[MAX_NAME_LENGTH];
@@ -668,6 +820,19 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
     }
 }
 
+/**
+ * Event handler for a player taking damage. Values are base damage only,
+ * they are not crit or distance modified.
+ *
+ * @param victim Index of the victim.
+ * @param attacker Index of the attacker.
+ * @param inflictor Entity index of the damage inflictor (usually the same as attacker).
+ * @param damage The base damage that the victim will take.
+ * @param damagetype Bitflags for the type of damage that the victim took.
+ * @param weapon Entity index of the weapon that the victim was injured with.
+ * @param damageForce A vector representing the amount of force the weapon applied to the victim.
+ * @param damagePosition A vector representing the location that the damage came from.
+ */
 public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3])
 {    
     // The player is supposed to die, don't modify damage but remove the gib effect that happens
@@ -718,7 +883,12 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     return Plugin_Changed;
 }
 
-// Check if the id that did damage belongs to the world insta-kill
+/**
+ * Check if the entity that did damage belongs to the world insta-kill.
+ *
+ * @param attacker The entity index to check.
+ * @return True if the attacker is the world, otherwise false.
+ */
 bool:IsWorldDeath(attacker)
 {
     // Entity IDs 1 to MaxClients are reserved for players
@@ -726,6 +896,13 @@ bool:IsWorldDeath(attacker)
     return attacker > MaxClients;
 }
 
+/**
+ * Freeze a player in place.
+ *
+ * @param victim Index of the player to freeze.
+ * @param attacker Index of the player that caused the freeze.
+ * 0 represents an unknown source (e.g. forced freeze by admins).
+ */
 FreezePlayer(victim, attacker)
 {
     decl String:victim_name[MAX_NAME_LENGTH];
@@ -748,6 +925,13 @@ FreezePlayer(victim, attacker)
     }
 }
 
+/**
+ * Remove the freeze effect from a player.
+ *
+ * @param victim Index of the player to unfreeze.
+ * @param attacker Index of the player that caused the unfreeze.
+ * 0 represents an unknown source (e.g. forced freeze by admins).
+ */
 UnfreezePlayer(victim, attacker)
 {
     decl String:victim_name[MAX_NAME_LENGTH];
@@ -768,6 +952,12 @@ UnfreezePlayer(victim, attacker)
     }
 }
 
+/**
+ * Timer handler for removing freeze immunity.
+ *
+ * @param timer A handle to the timer that triggered this callback.
+ * @param user_id User ID of the client.
+ */
 public Action:RemoveFreezeImmunity(Handle:timer, any:user_id)
 {
     new client = GetClientOfUserId(user_id);
@@ -775,6 +965,13 @@ public Action:RemoveFreezeImmunity(Handle:timer, any:user_id)
         stun_immunity[client] = false;
 }
 
+/**
+ * Wrapper around GetClientName to make any ID lower than 0 return as "The Guardians".
+ * 
+ * @param client Index of the client.
+ * @param name Buffer to store the client's name.
+ * @param length Maximum size of the string buffer (including NULL terminator).
+ */
 GetCustomClientName(client, String:name[], length)
 {
     if (client < 1)
@@ -783,7 +980,12 @@ GetCustomClientName(client, String:name[], length)
         GetClientName(client, name, length);
 }
 
-// Handle debug/admin unfreeze command
+/**
+ * Command handler for unfreezing a player.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
 public Action:UnfreezePlayerCommand(client, args)
 {
     decl String:name[MAX_NAME_LENGTH];
@@ -798,7 +1000,12 @@ public Action:UnfreezePlayerCommand(client, args)
     return Plugin_Handled;
 }
 
-// Handle debug/admin freeze command
+/**
+ * Command handler for freezing a player.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
 public Action:FreezePlayerCommand(client, args)
 {
     decl String:name[MAX_NAME_LENGTH];
@@ -814,7 +1021,12 @@ public Action:FreezePlayerCommand(client, args)
 }
 
 
-// Handle debug/admin flutts command
+/**
+ * Command handler for turning a player into a Fluttershy.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
 public Action:MakeFluttershyCommand(client, args)
 {
     decl String:name[MAX_NAME_LENGTH];
@@ -829,15 +1041,17 @@ public Action:MakeFluttershyCommand(client, args)
     return Plugin_Handled;
 }
 
-// Selects a player by name, defaulting to a menu if no name is specified.
-// Prints a message to the client if the player name is not found or if more
-// than one player matches the search string. The name "@me" will return the
-// id of the client making the request.
-//
-// @param client The client who is performing the action
-// @param handler A fallback menu handler if the client selects the name using the menu
-// @param search_name The player name to search for
-// @return The client ID of the player if found, otherwise -1
+/**
+ * Selects a player by name, defaulting to a menu if no name is specified.
+ * Prints a message to the client if the player name is not found or if more
+ * than one player matches the search string. The name "@me" will return the
+ * id of the client making the request.
+ *
+ * @param client The client who is performing the action.
+ * @param handler A fallback menu handler if the client selects the name using the menu.
+ * @param search_name The player name to search for.
+ * @return The client ID of the player if found, otherwise -1.
+*/
 SelectPlayer(client, MenuHandler:handler, String:search_name[])
 {
     decl String:user_id[16];
@@ -912,7 +1126,12 @@ SelectPlayer(client, MenuHandler:handler, String:search_name[])
     }
 }
 
-// Handle debug/admin unflutts command
+/**
+ * Command handler for moving a player to RED.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
 public Action:ClearFluttershyCommand(client, args)
 {
     decl String:name[MAX_NAME_LENGTH];
@@ -931,6 +1150,14 @@ public Action:ClearFluttershyCommand(client, args)
     return Plugin_Handled;
 }
 
+/**
+ * Menu handler for moving a player to RED.
+ *
+ * @param menu A handle to the menu that called this handler.
+ * @param action The action that the user took on the menu.
+ * @param param1 Unknown.
+ * @param param2 Unknown.
+ */
 public ClearFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2)
 {
     decl String:info[32];
@@ -953,6 +1180,14 @@ public ClearFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2
     }
 }
 
+/**
+ * Menu handler for moving a player to the Fluttershy team.
+ *
+ * @param menu A handle to the menu that called this handler.
+ * @param action The action that the user took on the menu.
+ * @param param1 Unknown.
+ * @param param2 Unknown.
+ */
 public MakeFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2)
 {
     decl String:info[32];
@@ -970,6 +1205,14 @@ public MakeFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2)
     }
 }
 
+/**
+ * Menu handler for unfreezing a player.
+ *
+ * @param menu A handle to the menu that called this handler.
+ * @param action The action that the user took on the menu.
+ * @param param1 Unknown.
+ * @param param2 Unknown.
+ */
 public UnfreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
 {
     decl String:info[32];
@@ -987,6 +1230,14 @@ public UnfreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
     }
 }
 
+/**
+ * Menu handler for freezing a player.
+ *
+ * @param menu A handle to the menu that called this handler.
+ * @param action The action that the user took on the menu.
+ * @param param1 Unknown.
+ * @param param2 Unknown.
+ */
 public FreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
 {
     decl String:info[32];
@@ -1004,6 +1255,11 @@ public FreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
     }
 }
 
+/**
+ * Turns a player into a Fluttershy.
+ *
+ * @param client Index of the player to turn into a Fluttershy.
+ */
 MakeFluttershy(client)
 {
     decl String:name[MAX_NAME_LENGTH];
@@ -1023,6 +1279,13 @@ MakeFluttershy(client)
     }
 }
 
+/**
+ * Removes Fluttershy status from a player.
+ *
+ * @param client The index of the player to remove Fluttershy status from.
+ * @param attacker The index of the player who caused the Fluttershy status to be removed.
+ *                 0 represents an unknown source (e.g. clearing through the admin command).
+ */
 ClearFluttershy(client, attacker)
 {
     if (is_fluttershy[client])
@@ -1040,6 +1303,12 @@ ClearFluttershy(client, attacker)
 
 // From pheadxdll's Roll the Dice mod (http://forums.alliedmods.net/showthread.php?t=75561)
 // Modified by Dr. McKay (http://forums.alliedmods.net/showthread.php?p=1710929)
+/**
+ * Kills a player while correctly identifying the killer and weapon in the killboard.
+ *
+ * @param client The index of the player to kill.
+ * @param attacker The index of the player to credit the kill with.
+ */
 KillPlayer(client, attacker) 
 { 
     new ent = CreateEntityByName("env_explosion"); 
@@ -1063,6 +1332,12 @@ KillPlayer(client, attacker)
 
 // From pheadxdll's Roll the Dice mod (http://forums.alliedmods.net/showthread.php?t=75561)
 // Modified by Dr. McKay (http://forums.alliedmods.net/showthread.php?p=1710929)
+/**
+ * Timer handled for removing the explosion used to kill a player.
+ *
+ * @param timer The handle to the timer that triggered this handler.
+ * @param ent The explosition entity to remove.
+ */
 public Action:RemoveExplosion(Handle:timer, any:ent) 
 { 
     if (IsValidEntity(ent)) 
@@ -1076,6 +1351,14 @@ public Action:RemoveExplosion(Handle:timer, any:ent)
     } 
 }  
 
+/**
+ * Handler for the player attempting to join a team.
+ *
+ * @param client Index of the player.
+ * @param command The name of the command.
+ * @param argc The number of arguments.
+ * @return Plugin_Handled to block the command, otherwise Plugin_Changed.
+ */
 public Action:JoinTeamCommand(client, const String:command[], argc)
 {
     decl String:team[10];
@@ -1104,6 +1387,14 @@ public Action:JoinTeamCommand(client, const String:command[], argc)
     }
 }
 
+/**
+ * Handler for commands that a Fluttershy or stunned player should not be allowed to run.
+ *
+ * @param client Index of the player.
+ * @param command The name of the command.
+ * @param argc The number of arguments.
+ * @return Plugin_Handled to block the command, otherwise Plugin_Changed.
+ */
 public Action:BlockCommandFluttershy(client, const String:command[], argc)
 {
     if (is_fluttershy[client] || TF2_IsPlayerInCondition(client, TFCond_Dazed))
@@ -1112,6 +1403,14 @@ public Action:BlockCommandFluttershy(client, const String:command[], argc)
         return Plugin_Continue;
 }
 
+/**
+ * Handler for the spectate command.
+ *
+ * @param client Index of the player.
+ * @param command The name of the command.
+ * @param argc The number of arguments.
+ * @return Plugin_Handled to block the command, otherwise Plugin_Changed.
+ */
 public Action:SpectateCommand(client, const String:command[], argc)
 {
     if (!IsClientObserver(client))
@@ -1119,6 +1418,14 @@ public Action:SpectateCommand(client, const String:command[], argc)
     return Plugin_Continue;
 }
 
+/**
+ * Handler for a player trying to change class.
+ *
+ * @param client Index of the player.
+ * @param command The name of the command.
+ * @param argc The number of arguments.
+ * @return Plugin_Handled to block the command, otherwise Plugin_Changed.
+ */
 public Action:JoinClassCommand(client, const String:command[], argc)
 {
     decl String:class[10];
@@ -1158,6 +1465,13 @@ public Action:JoinClassCommand(client, const String:command[], argc)
         return Plugin_Handled;
     }
 }
+
+/**
+ * Check if a class allowed for RED players.
+ *
+ * @param class The name of the class that the player is attempting to join (from the joinclass command).
+ * @return True if the class is allowed, otherwise false.
+ */
 bool:IsRedClassAllowed(const String:class[])
 {
     new TFClassType:class_enum;
@@ -1167,11 +1481,24 @@ bool:IsRedClassAllowed(const String:class[])
         return false;
 }
 
+/** 
+ * Check if a class is allowed for RED players.
+ *
+ * @param class The class that the player is attempting to join.
+ * @return True if the class is allowed, otherwise false.
+ */
 bool:IsRedClassAllowedByEnum(TFClassType:class)
 {
     return !(class == TFClass_Medic || class == TFClass_Engineer || class == TFClass_Spy);
 }
 
+/**
+ * Finds the TFClassType enum matching the class name.
+ * 
+ * @param class The name of the class (from the joinclass command).
+ * @param class_enum Outputs for the class.
+ * @return True if the class is valid, otherwise false.
+ */
 bool:ClassNameToEnum(const String:class[], &TFClassType:class_enum)
 {
     if (StrEqual(class, "scout", false))
@@ -1198,6 +1525,9 @@ bool:ClassNameToEnum(const String:class[], &TFClassType:class_enum)
     return true;
 }
 
+/**
+ * Check if the game has been won and list the winners if it has.
+ */
 CheckWinCondition()
 {
     decl String:sound_path[PLATFORM_MAX_PATH];
