@@ -4,7 +4,7 @@
 #include <tf2_stocks>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "0.1.0"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -293,29 +293,27 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
  */
 public ConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
 {
-    switch (convar)
-    {
-    case max_hp_cvar:
+    if (convar == max_hp_cvar)
         max_hp = GetConVarInt(convar);
-    case freeze_duration_cvar:
+    else if (convar == freeze_duration_cvar)
         freeze_duration = GetConVarFloat(convar);
-    case freeze_immunity_cvar:
+    else if (convar == freeze_immunity_cvar)
         freeze_immunity_time = GetConVarFloat(convar);
-    case minigun_reload_time_cvar:
+    else if (convar == minigun_reload_time_cvar)
         minigun_reload_time = GetConVarFloat(convar);
-    case flamethrower_reload_time_cvar:
+    else if (convar == flamethrower_reload_time_cvar)
         flamethrower_reload_time = GetConVarFloat(convar);
-    case minigun_ammo_cvar:
+    else if (convar == minigun_ammo_cvar)
         minigun_ammo = GetConVarInt(convar);
-    case flamethrower_ammo_cvar:
+    else if (convar == flamethrower_ammo_cvar)
         flamethrower_ammo = GetConVarInt(convar);
-    case airblast_cooldown_time_cvar:
-        airblast_cooldown_timer = GetConVarFloat(convar);
-    case round_time_cvar:
+    else if (convar == airblast_cooldown_time_cvar)
+        airblast_cooldown_time = GetConVarFloat(convar);
+    else if (convar == round_time_cvar)
         round_time = GetConVarInt(convar);
-    case fluttershy_ratio_cvar:
+    else if (convar == fluttershy_ratio_cvar)
         fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(convar)));
-    case enabled_cvar:
+    else if (convar == enabled_cvar)
     {
         if (GetConVarBool(convar))
             EnablePlugin();

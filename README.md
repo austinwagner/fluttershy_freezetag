@@ -33,4 +33,6 @@ There are three configuration files for this mod.
 
 The source for this plugin is located in `addons/sourcemod/scripting/freezetag.sp`. To compile the code, you must have SDKHooks installed. The web compiler that SourceMod provides cannot link to this dependency. You need to use the compiler executable included with SourceMod.
 
+The source file in the master branch will always match the compiled plugin. Development versions of the source code can be found in the delvelopment branch. The compiled plugin in the development branch will be the last release version and thus will not match the source code.
+
 Maps must be custom made to work with this plugin. The map should contain a team_control_point_master and a team_round_timer. There should be no additional objectives on the map. This causes the game to only show a round timer on the HUD. Additional considerations should be made when adapting maps to remove resupply cabinets and one-way doors such as the spawn room doors.
