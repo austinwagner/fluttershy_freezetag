@@ -116,11 +116,10 @@ public OnPluginStart()
     
     LoadConVars();
     
-    // Admin commands (currently not admin only for debugging)
-    RegConsoleCmd("unfreeze", UnfreezePlayerCommand);
-    RegConsoleCmd("freeze", FreezePlayerCommand);
-    RegConsoleCmd("flutts", MakeFluttershyCommand);
-    RegConsoleCmd("unflutts", ClearFluttershyCommand);
+    RegAdminCmd("unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     
@@ -843,13 +842,11 @@ SelectPlayer(client, MenuHandler:handler, String:search_name[])
 {
     decl String:user_id[16];
     decl String:name[MAX_NAME_LENGTH];
-    decl String:menu_title[128];
     
     if (search_name[0] == '\0')
     {
         new Handle:menu = CreateMenu(handler);
-        Format(menu_title, sizeof(menu_title), "%T", "SelectPlayerMenu", client);
-        SetMenuTitle(menu, menu_title);
+        SetMenuTitle(menu, "Select a player:");
         for (new i = 1; i <= MaxClients; i++)
         {
             if (IsClientInGame(i))

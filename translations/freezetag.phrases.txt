@@ -23,12 +23,6 @@
         "en"            "File {1} does not exist."
     }
     
-    "FileNoExist"
-    {
-        "#format"       "{1:s}"
-        "en"            "File {1} does not exist."
-    }
-    
     "SoundConfFail"
     {
         "en"            "Could not open sound configuration file."
@@ -78,7 +72,7 @@
         "en"            "{1} has been unfrozen by {2}!"
     }
     
-    "SelectMenuTitle"
+    "SelectPlayerMenu"
     {
         "en"            "Select a player:"
     }
