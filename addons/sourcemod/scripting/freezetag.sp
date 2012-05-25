@@ -4,7 +4,7 @@
 #include <tf2_stocks>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "0.1.0"
+#define PLUGIN_VERSION "0.1.1"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -21,7 +21,7 @@
 
 public Plugin:myinfo =
 {
-	name = "Fluttershy Freeze Tag",
+	name = "Fluttershy's Freeze Tag",
 	author = "Ambit (idea by RogueDarkJedi)",
 	description = "Defeat the Fluttershys before they freeze everyone.",
 	version = PLUGIN_VERSION,
@@ -475,7 +475,7 @@ LoadSound(String:sound[])
  * @param client Index of the client.
  */
 public PreThinkPost(client) 
-{
+{   
     if (IsClientObserver(client))
         return;
 
@@ -649,6 +649,7 @@ public OnClientDisconnect(client)
         // If a player disconnected while stunned, make a note of it
         if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
         {
+            TF2_RemoveCondition(client, TFCond_Dazed); // Try to prevent player's camera from bugging out
             GetClientAuthString(client, steam_id, sizeof(steam_id));
             dc_while_stunned[num_dc_while_stunned % MAX_DC_PROT] = steam_id;
             num_dc_while_stunned++;
@@ -1448,8 +1449,8 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     else
     {
         // Handle class change manually
-        new TFClassType:class_enum;
-        if (ClassNameToEnum(class, class_enum))
+        new TFClassType:class_enum = ClassNameToEnum(class);
+        if (class_enum != TFClass_Unknown)
         { 
             if (reload_timer[client] != INVALID_HANDLE)
             {
@@ -1472,8 +1473,8 @@ public Action:JoinClassCommand(client, const String:command[], argc)
  */
 bool:IsRedClassAllowed(const String:class[])
 {
-    new TFClassType:class_enum;
-    if (ClassNameToEnum(class, class_enum))
+    new TFClassType:class_enum = ClassNameToEnum(class);
+    if (class_enum != TFClass_Unknown)
         return IsRedClassAllowedByEnum(class_enum);
     else
         return false;
@@ -1494,33 +1495,30 @@ bool:IsRedClassAllowedByEnum(TFClassType:class)
  * Finds the TFClassType enum matching the class name.
  * 
  * @param class The name of the class (from the joinclass command).
- * @param class_enum Outputs for the class.
- * @return True if the class is valid, otherwise false.
+ * @return The class if the name is valid, otherwise TFClass_Unknown.
  */
-bool:ClassNameToEnum(const String:class[], &TFClassType:class_enum)
+TFClassType:ClassNameToEnum(const String:class[])
 {
     if (StrEqual(class, "scout", false))
-        class_enum = TFClass_Scout;
+        return TFClass_Scout;
     else if (StrEqual(class, "medic", false))
-        class_enum = TFClass_Medic;
+        return TFClass_Medic;
     else if (StrEqual(class, "sniper", false))
-        class_enum = TFClass_Sniper;
+        return TFClass_Sniper;
     else if (StrEqual(class, "heavyweap", false))
-        class_enum = TFClass_Heavy;
+        return TFClass_Heavy;
     else if (StrEqual(class, "demoman", false))
-        class_enum = TFClass_DemoMan;
+        return TFClass_DemoMan;
     else if (StrEqual(class, "spy", false))
-        class_enum = TFClass_Spy;
+        return TFClass_Spy;
     else if (StrEqual(class, "engineer", false))
-        class_enum = TFClass_Engineer;
+        return TFClass_Engineer;
     else if (StrEqual(class, "soldier", false))
-        class_enum = TFClass_Soldier;
+        return TFClass_Soldier;
     else if (StrEqual(class, "pyro", false))
-        class_enum = TFClass_Pyro;
+        return TFClass_Pyro;
     else
-        return false;
-    
-    return true;
+        return TFClass_Unknown;
 }
 
 /**
