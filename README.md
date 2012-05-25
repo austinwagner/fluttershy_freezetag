@@ -29,6 +29,22 @@ There are three configuration files for this mod.
 
 `cfg/sourcemod/freezetagsounds.cfg` lists the sounds that the game should play for different events. They are chosen randomly to play from the list. To add a sound to the list, enter its path relative to `tf/sounds/`. These sounds are loaded when the plugin is loaded. If you change this file, you must reload the plugin by entering `sm plugins freezetag reload` into the console.
 
+## Running the Game
+If the game is not already running, run `freezetag_enabled 1` in the server console. This will cause the game mode to load and the round to restart. The game mode will remain active until something causes `freezetag_enabled` to become 0.
+
+To administrate the game, there are four admin commands which can be run by anyone with generic admin rights.
+
+* `flutts <player name>` will cause a player to be moved to the Fluttershy team. If this player is the only player remaining on RED that was not frozen, the round will end.
+* `unflutts <player name>` will move a player from the Fluttershy team to RED. If this action causes no Fluttershys to remain, the round will end.
+* `freeze <player name>` will freeze a player in place as if they were hit by a Fluttershy. If this player was the last unfrozen player on RED, the round will end.
+* `unfreeze <player name>` will remove the freeze effect from a player.
+ 
+Any of the commands can be run without specifying a player name. If a name is not specified, a menu listing all of the current players will be displayed.
+
+The commands will also match partial names as long as the partial name unambiguously identifies a player. If you need to enter a name with spaces, enclose the name in double quotes.
+
+`@me` is a special name parameter that will target yourself.
+
 ## Development
 
 The source for this plugin is located in `addons/sourcemod/scripting/freezetag.sp`. To compile the code, you must have SDKHooks installed. The web compiler that SourceMod provides cannot link to this dependency. You need to use the compiler executable included with SourceMod.
