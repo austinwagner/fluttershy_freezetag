@@ -4,7 +4,7 @@
 #include <tf2_stocks>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "0.1.1"
+#define PLUGIN_VERSION "0.1.2"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -69,7 +69,7 @@ new displayed_health[MAX_CLIENT_IDS];
 new current_health[MAX_CLIENT_IDS];
 new bool:bypass_immunity[MAX_CLIENT_IDS];
 new bool:stun_immunity[MAX_CLIENT_IDS];
-new String:dc_while_stunned[MAX_DC_PROT][20];
+new String:dc_while_stunned[MAX_DC_PROT][100];
 new bool:airblast_cooldown[MAX_CLIENT_IDS];
 new Handle:airblast_timer[MAX_CLIENT_IDS];
 new Handle:reload_timer[MAX_CLIENT_IDS];
@@ -135,10 +135,10 @@ public OnPluginStart()
     autobalance_cvar = FindConVar("mp_autoteambalance");
     
     // Register admin commands for rearranging players and debugging
-    RegAdminCmd("unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     
@@ -216,6 +216,7 @@ public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
  */
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    decl players[MAX_CLIENTS_IDS];
     num_killers = 0;
     num_dc_while_stunned = 0;
     win_conditions_checked = false;
@@ -226,7 +227,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     }
     
     // Move everyone to RED and reset all of the arrays
-    new num_red = 0;
+    new num_players = 0;
     for (new i = 1; i <= MaxClients; i++)
     {
         is_fluttershy[i] = false;
@@ -236,17 +237,20 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         if (IsClientInGame(i) && !IsClientObserver(i))
         {
             ChangeClientTeam(i, TEAM_RED);
-            num_red++;
+            players[num_players] = i;
+            num_players++;
         }
     }
     
     // Select players to become Fluttershys
     new num_fluttershys = 0;
-    new fshy_goal = RoundToCeil(FloatMul(float(num_red), fluttershy_ratio));
+    new fshy_goal = RoundToCeil(FloatMul(float(num_players), fluttershy_ratio));
+    new client;
+    
     while (num_fluttershys < fshy_goal)
     {
-        new client = GetRandomInt(1, MaxClients);
-        if (IsClientInGame(client) && !IsClientObserver(client) && !is_fluttershy[client])
+        client = players[GetRandomInt(1, num_players)];
+        if (!is_fluttershy[client])
         {
             num_fluttershys++;
             MakeFluttershy(client);
@@ -358,7 +362,7 @@ EnablePlugin()
     {
         if (IsClientInGame(i))
         {
-            OnClientPutInServer(i);
+            SetupPlayer(i);
         }
     }
     
@@ -459,7 +463,7 @@ public OnMapStart()
  *
  * @param sound The path to the sound file relative to the $GAME_ROOT\sound\ directory.
  */
-LoadSound(String:sound[])
+LoadSound(const String:sound[])
 {
     decl String:path[PLATFORM_MAX_PATH];
     
@@ -484,6 +488,7 @@ public PreThinkPost(client)
         SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", GetPlayerWeaponSlot(client, SLOT_MELEE));
     
     // Slow scouts to 100% move speed
+    // TODO: Interpolation makes this feel extremely jerky, maybe there's another way to balance scouts.
     if (!is_fluttershy[client] && TF2_GetPlayerClass(client) == TFClass_Scout)
         SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
     
@@ -622,15 +627,23 @@ public OnPluginEnd()
 public OnClientPutInServer(client)
 {
     if (enabled)
-    {
-        SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-        SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
-        SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
-        SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
-        SDKHook(client, SDKHook_Spawn, OnSpawn);
-        SDKHook(client, SDKHook_PreThinkPost, PreThinkPost);
-        ChangeClientTeam(client, TEAM_RED);
-    }
+        SetupPlayer(client);
+}
+
+/**
+ * Hooks player events and moves player to RED.
+ *
+ * @param client Index of the client.
+ */
+SetupPlayer(client)
+{
+    SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+    SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
+    SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
+    SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
+    SDKHook(client, SDKHook_Spawn, OnSpawn);
+    SDKHook(client, SDKHook_PreThinkPost, PreThinkPost);
+    ChangeClientTeam(client, TEAM_RED);
 }
 
 /**
@@ -1473,11 +1486,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
  */
 bool:IsRedClassAllowed(const String:class[])
 {
-    new TFClassType:class_enum = ClassNameToEnum(class);
-    if (class_enum != TFClass_Unknown)
-        return IsRedClassAllowedByEnum(class_enum);
-    else
-        return false;
+    return IsRedClassAllowedByEnum(ClassNameToEnum(class));
 }
 
 /** 
