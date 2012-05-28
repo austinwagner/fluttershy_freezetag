@@ -216,7 +216,7 @@ public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
  */
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
-    decl players[MAX_CLIENTS_IDS];
+    decl players[MAX_CLIENT_IDS];
     num_killers = 0;
     num_dc_while_stunned = 0;
     win_conditions_checked = false;
@@ -249,7 +249,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     
     while (num_fluttershys < fshy_goal)
     {
-        client = players[GetRandomInt(1, num_players)];
+        client = players[GetRandomInt(0, num_players - 1)];
         if (!is_fluttershy[client])
         {
             num_fluttershys++;
@@ -317,7 +317,7 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
         round_time = GetConVarInt(convar);
     else if (convar == fluttershy_ratio_cvar)
         fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(convar)));
-    else if (convar == enabled_cvar)
+    else if (convar == enabled_cvar && !StrEqual(oldValue, newValue))
     {
         if (GetConVarBool(convar))
             EnablePlugin();
