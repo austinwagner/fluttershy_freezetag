@@ -126,7 +126,7 @@ public OnPluginStart()
     airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
     round_time = GetConVarInt(round_time_cvar);
     fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
-    enabled = GetConVarBool(enabled_cvar);
+    enabled = false;
     
     // Get the default TF2 convars that will need to be changed
     ff_cvar = FindConVar("mp_friendlyfire");
@@ -146,7 +146,7 @@ public OnPluginStart()
     
     LoadSoundConfig();
     
-    if (enabled)
+    if (GetConVarBool(enabled_cvar))
         EnablePlugin();
 }
 
@@ -317,7 +317,7 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
         round_time = GetConVarInt(convar);
     else if (convar == fluttershy_ratio_cvar)
         fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(convar)));
-    else if (convar == enabled_cvar && !StrEqual(oldValue, newValue))
+    else if (convar == enabled_cvar)
     {
         if (GetConVarBool(convar))
             EnablePlugin();
@@ -382,8 +382,10 @@ EnablePlugin()
 
 /**
  * Turns of the plugin. Unhooks events and restores console variables.
+ *
+ * @param unloading Set to true only if this function is being called due to a full unload of the plugin.
  */
-DisablePlugin()
+DisablePlugin(bool:unloading = false)
 {
     if (!enabled)
         return;
@@ -396,16 +398,19 @@ DisablePlugin()
     SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
     SetConVarInt(autobalance_cvar, original_autobalance_val);
     
-    // Unhook commands
-    RemoveCommandListener(JoinTeamCommand, "jointeam");
-    RemoveCommandListener(JoinClassCommand, "joinclass");
-    RemoveCommandListener(BlockCommandFluttershy, "kill");
-    RemoveCommandListener(SpectateCommand, "spectate");
-    RemoveCommandListener(BlockCommandFluttershy, "explode");
+    // Unhook commands and events. If the plugin is ending, these have already been removed.
+    if (!unloading)
+    {
+        RemoveCommandListener(JoinTeamCommand, "jointeam");
+        RemoveCommandListener(JoinClassCommand, "joinclass");
+        RemoveCommandListener(BlockCommandFluttershy, "kill");
+        RemoveCommandListener(SpectateCommand, "spectate");
+        RemoveCommandListener(BlockCommandFluttershy, "explode");
     
-    UnhookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
-    UnhookEvent("teamplay_round_win", RoundEnd);
-    UnhookEvent("teamplay_round_stalemate", RoundEnd);
+        UnhookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
+        UnhookEvent("teamplay_round_win", RoundEnd);
+        UnhookEvent("teamplay_round_stalemate", RoundEnd);
+    }
     
     // Remove SDKHooks player event hooks
     for (new i = 1; i <= MaxClients; i++)
@@ -616,7 +621,7 @@ public Action:ReloadFlamethrower(Handle:timer, any:client)
  */
 public OnPluginEnd()
 {
-    DisablePlugin();
+    DisablePlugin(true);
 }
 
 /**
