@@ -18,7 +18,7 @@ Copy all of the folders in this project into your server's `tf/` directory.
 
 This will copy the map, sounds, default configurations, plugin, and plugin source to your server.
 
-Your server should automatically load the plugin when it starts. If the server is already running, run `sm plugins freezetag load` in the server console.
+Your server should automatically load the plugin when it starts. If the server is already running, run `sm plugins load freezetag` in the server console.
 
 ## Configuration
 There are three configuration files for this mod.
