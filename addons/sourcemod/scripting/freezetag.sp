@@ -139,6 +139,8 @@ public OnPluginStart()
     RegAdminCmd("freezetag_freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
     RegAdminCmd("freezetag_flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
     RegAdminCmd("freezetag_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_enable", EnableCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_disable", DisableCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     
@@ -995,6 +997,28 @@ GetCustomClientName(client, String:name[], length)
         strcopy(name, length, "The Guardians");
     else
         GetClientName(client, name, length);
+}
+
+/**
+ * Command handler for enabling this plugin.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
+public Action:EnableCommand(client, args)
+{
+    ServerCommand("freezetag_enabled 1");
+}
+
+/**
+ * Command handler for disabling this plugin.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
+public Action:DisableCommand(client, args)
+{
+    ServerCommand("freezetag_enabled 0");
 }
 
 /**
