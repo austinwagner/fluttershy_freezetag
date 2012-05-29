@@ -1,6 +1,7 @@
 #pragma semicolon 1
+#pragma tabsize 0
+
 #include <sourcemod>
-#include <sdktools>
 #include <tf2_stocks>
 #include <sdkhooks>
 
@@ -8,12 +9,17 @@
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
+
+/****** Teams ******/
 #define TEAM_RED 2
 #define TEAM_BLU 3
+
+/****** Sounds ******/
 #define SND_FREEZE 0
 #define SND_UNFREEZE 1
 #define SND_WIN 2
 #define SND_LOSS 3
+
 #define PREVENT_DEATH_HP 3000
 #define SHAME_STUN_DURATION 5000.0
 #define SLOT_MELEE 2
@@ -33,12 +39,10 @@ new Handle:sounds[4];
 new original_ff_val;
 new original_scramble_teams_val;
 new original_teams_unbalance_val;
-new original_autobalance_val;
 
 new Handle:ff_cvar;
 new Handle:scramble_teams_cvar;
 new Handle:teams_unbalance_cvar;
-new Handle:autobalance_cvar;
 
 new Handle:max_hp_cvar;
 new Handle:freeze_duration_cvar;
@@ -69,7 +73,7 @@ new displayed_health[MAX_CLIENT_IDS];
 new current_health[MAX_CLIENT_IDS];
 new bool:bypass_immunity[MAX_CLIENT_IDS];
 new bool:stun_immunity[MAX_CLIENT_IDS];
-new String:dc_while_stunned[MAX_DC_PROT][20];
+new String:dc_while_stunned[MAX_DC_PROT][100];
 new bool:airblast_cooldown[MAX_CLIENT_IDS];
 new Handle:airblast_timer[MAX_CLIENT_IDS];
 new Handle:reload_timer[MAX_CLIENT_IDS];
@@ -132,13 +136,12 @@ public OnPluginStart()
     ff_cvar = FindConVar("mp_friendlyfire");
     scramble_teams_cvar = FindConVar("mp_scrambleteams_auto");
     teams_unbalance_cvar = FindConVar("mp_teams_unbalance_limit");
-    autobalance_cvar = FindConVar("mp_autoteambalance");
     
     // Register admin commands for rearranging players and debugging
-    RegAdminCmd("unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("sm_fft_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC, "Unfreezes a player");
+    RegAdminCmd("sm_fft_freeze", FreezePlayerCommand, ADMFLAG_GENERIC, "Freezes a player");
+    RegAdminCmd("sm_fft_flutts", MakeFluttershyCommand, ADMFLAG_GENERIC, "Sets a player to be fluttershy");
+    RegAdminCmd("sm_fft_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC, "Removes a player from being fluttershy");
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     
@@ -156,43 +159,42 @@ public OnPluginStart()
 LoadSoundConfig()
 {
     decl String:line[PLATFORM_MAX_PATH];
+    decl String:type[120];
     decl String:full_path[PLATFORM_MAX_PATH];
-    new Handle:file = OpenFile("cfg\\sourcemod\\freezetagsounds.cfg", "r");
+    if(FileExists("cfg\\sourcemod\\freezetagsounds.cfg") == false)
+    {
+      LogError("%T", "SoundConfFail", LANG_SERVER);
+      return;
+    }   
+    new Handle:kvTree = CreateKeyValues("FluttershyFreezeTag");
+    FileToKeyValues(kvTree, "cfg\\sourcemod\\freezetagsounds.cfg");
     new section = -1;
     
     for (new i = 0; i < sizeof(sounds); i++)
-    {
         sounds[i] = CreateArray(PLATFORM_MAX_PATH, 0);
-    }
     
-    if (file != INVALID_HANDLE)
+    KvGotoFirstSubKey(kvTree);
+    do 
     {
-        while (ReadFileLine(file, line, sizeof(line)))
-        {
-            TrimString(line);
-            if (StrEqual(line, "[FreezeSounds]", false))
-                section = SND_FREEZE;
-            else if (StrEqual(line, "[UnfreezeSounds]", false))
-                section = SND_UNFREEZE;
-            else if (StrEqual(line, "[WinSounds]", false))
-                section = SND_WIN;
-            else if (StrEqual(line, "[LossSounds]", false))
-                section = SND_LOSS;
-            else if (section >= 0 && line[0] != '\0')
-            {
-                full_path = "sound\\";
-                StrCat(full_path, sizeof(full_path), line);
-                if (FileExists(full_path))
-                    PushArrayString(sounds[section], line);
-                else
-                    LogError("%T", "FileNoExist", LANG_SERVER, full_path);
-            }
-        }
-    }
-    else
-    {
-        LogError("%T", "SoundConfFail", LANG_SERVER);
-    }
+      KvGetString(kvTree, "file", line, sizeof(line), "");
+      KvGetString(kvTree, "type", type, sizeof(type), "");
+      if (StrEqual(type, "FreezeSound", false))
+          section = SND_FREEZE;
+      else if (StrEqual(type, "UnfreezeSound", false))
+          section = SND_UNFREEZE;
+      else if (StrEqual(type, "WinSound", false))
+          section = SND_WIN;
+      else if (StrEqual(type, "LossSound", false))
+          section = SND_LOSS;
+      full_path = "sound\\";
+      StrCat(full_path, sizeof(full_path), line);
+      if (FileExists(full_path))
+        PushArrayString(sounds[section], line);
+      else
+        LogError("%T", "FileNoExist", LANG_SERVER, full_path);
+    } while (KvGotoNextKey(kvTree));
+  
+    CloseHandle(kvTree);
 }
 
 /**
@@ -336,13 +338,11 @@ EnablePlugin()
     original_ff_val = GetConVarInt(ff_cvar);
     original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
     original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
-    original_autobalance_val = GetConVarInt(autobalance_cvar);
     
     // Set convars to make the unfreezing and stacked teams work
     SetConVarInt(ff_cvar, 1);
     SetConVarInt(scramble_teams_cvar, 0);
     SetConVarInt(teams_unbalance_cvar, 0);
-    SetConVarInt(autobalance_cvar, 0);
     
     // Initialize arrays
     for (new i = 1; i < MAX_CLIENT_IDS; i++)
@@ -390,7 +390,6 @@ DisablePlugin()
     SetConVarInt(ff_cvar, original_ff_val);
     SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
     SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
-    SetConVarInt(autobalance_cvar, original_autobalance_val);
     
     // Unhook commands
     RemoveCommandListener(JoinTeamCommand, "jointeam");
@@ -440,8 +439,6 @@ public OnMapStart()
     decl String:path[PLATFORM_MAX_PATH];
     new size;
     
-    LoadTranslations("freezetag.phrases");
-    
     for (new i = 0; i < sizeof(sounds); i++)
     {
         size = GetArraySize(sounds[i]);
@@ -459,7 +456,7 @@ public OnMapStart()
  *
  * @param sound The path to the sound file relative to the $GAME_ROOT\sound\ directory.
  */
-LoadSound(String:sound[])
+LoadSound(const String:sound[])
 {
     decl String:path[PLATFORM_MAX_PATH];
     
@@ -640,7 +637,7 @@ public OnClientPutInServer(client)
  */
 public OnClientDisconnect(client)
 {
-    decl String:steam_id[20];
+    decl String:steam_id[100];
     
     if (enabled)
     {
@@ -716,7 +713,7 @@ public Action:OnSpawn(client)
  */
  bool:ShouldShame(client)
 {
-    decl String:steam_id[20];
+    decl String:steam_id[100];
     
     GetClientAuthString(client, steam_id, sizeof(steam_id));
     
@@ -1449,7 +1446,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     else
     {
         // Handle class change manually
-        new TFClassType:class_enum = ClassNameToEnum(class);
+        new TFClassType:class_enum = TF2_GetClass(class);
         if (class_enum != TFClass_Unknown)
         { 
             if (reload_timer[client] != INVALID_HANDLE)
@@ -1473,7 +1470,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
  */
 bool:IsRedClassAllowed(const String:class[])
 {
-    new TFClassType:class_enum = ClassNameToEnum(class);
+    new TFClassType:class_enum = TF2_GetClass(class);
     if (class_enum != TFClass_Unknown)
         return IsRedClassAllowedByEnum(class_enum);
     else
@@ -1489,36 +1486,6 @@ bool:IsRedClassAllowed(const String:class[])
 bool:IsRedClassAllowedByEnum(TFClassType:class)
 {
     return !(class == TFClass_Medic || class == TFClass_Engineer || class == TFClass_Spy);
-}
-
-/**
- * Finds the TFClassType enum matching the class name.
- * 
- * @param class The name of the class (from the joinclass command).
- * @return The class if the name is valid, otherwise TFClass_Unknown.
- */
-TFClassType:ClassNameToEnum(const String:class[])
-{
-    if (StrEqual(class, "scout", false))
-        return TFClass_Scout;
-    else if (StrEqual(class, "medic", false))
-        return TFClass_Medic;
-    else if (StrEqual(class, "sniper", false))
-        return TFClass_Sniper;
-    else if (StrEqual(class, "heavyweap", false))
-        return TFClass_Heavy;
-    else if (StrEqual(class, "demoman", false))
-        return TFClass_DemoMan;
-    else if (StrEqual(class, "spy", false))
-        return TFClass_Spy;
-    else if (StrEqual(class, "engineer", false))
-        return TFClass_Engineer;
-    else if (StrEqual(class, "soldier", false))
-        return TFClass_Soldier;
-    else if (StrEqual(class, "pyro", false))
-        return TFClass_Pyro;
-    else
-        return TFClass_Unknown;
 }
 
 /**
