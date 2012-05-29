@@ -886,7 +886,7 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
         FreezePlayer(victim, attacker);
     }
     // If ally is hit and frozen, unfreeze him
-    else if (attacker != 0 && GetClientTeam(victim) == GetClientTeam(attacker) && TF2_IsPlayerInCondition(victim, TFCond_Dazed) && weapon == GetPlayerWeaponSlot(attacker, 2))
+    else if (attacker != 0 && victim != attacker && GetClientTeam(victim) == GetClientTeam(attacker) && TF2_IsPlayerInCondition(victim, TFCond_Dazed) && weapon == GetPlayerWeaponSlot(attacker, 2))
     {
         UnfreezePlayer(victim, attacker);
     }
@@ -993,7 +993,7 @@ public Action:RemoveFreezeImmunity(Handle:timer, any:user_id)
  */
 GetCustomClientName(client, String:name[], length)
 {
-    if (client < 1)
+    if (client < 1 || client > MaxClients || !IsClientInGame(client))
         strcopy(name, length, "The Guardians");
     else
         GetClientName(client, name, length);
@@ -1314,9 +1314,11 @@ MakeFluttershy(client)
         TF2_SetPlayerClass(client, TFClass_Medic);
         TF2_RespawnPlayer(client);
         TF2_RegeneratePlayer(client);
-        displayed_health[client] = max_hp < 1000 ? max_hp : 1000;
+        displayed_health[client] = max_hp - ((max_hp / 1000) * 1000);
+        if (displayed_health[client] <= 0) displayed_health[client] = 1000;
         current_health[client] = max_hp;
         SetEntityHealth(client, displayed_health[client]);
+        PrintToChat(client, "%t", "CurrentHealth", current_health[client]);
     }
 }
 
