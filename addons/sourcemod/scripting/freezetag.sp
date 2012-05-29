@@ -5,7 +5,7 @@
 #include <tf2_stocks>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "0.1.1"
+#define PLUGIN_VERSION "0.1.2"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -130,7 +130,7 @@ public OnPluginStart()
     airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
     round_time = GetConVarInt(round_time_cvar);
     fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
-    enabled = GetConVarBool(enabled_cvar);
+    enabled = false;
     
     // Get the default TF2 convars that will need to be changed
     ff_cvar = FindConVar("mp_friendlyfire");
@@ -138,10 +138,12 @@ public OnPluginStart()
     teams_unbalance_cvar = FindConVar("mp_teams_unbalance_limit");
     
     // Register admin commands for rearranging players and debugging
-    RegAdminCmd("sm_fft_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC, "Unfreezes a player");
-    RegAdminCmd("sm_fft_freeze", FreezePlayerCommand, ADMFLAG_GENERIC, "Freezes a player");
-    RegAdminCmd("sm_fft_flutts", MakeFluttershyCommand, ADMFLAG_GENERIC, "Sets a player to be fluttershy");
-    RegAdminCmd("sm_fft_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC, "Removes a player from being fluttershy");
+    RegAdminCmd("freezetag_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_enable", EnableCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("freezetag_disable", DisableCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     
@@ -149,7 +151,7 @@ public OnPluginStart()
     
     LoadSoundConfig();
     
-    if (enabled)
+    if (GetConVarBool(enabled_cvar))
         EnablePlugin();
 }
 
@@ -218,6 +220,7 @@ public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
  */
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    decl players[MAX_CLIENT_IDS];
     num_killers = 0;
     num_dc_while_stunned = 0;
     win_conditions_checked = false;
@@ -228,7 +231,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     }
     
     // Move everyone to RED and reset all of the arrays
-    new num_red = 0;
+    new num_players = 0;
     for (new i = 1; i <= MaxClients; i++)
     {
         is_fluttershy[i] = false;
@@ -238,17 +241,20 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         if (IsClientInGame(i) && !IsClientObserver(i))
         {
             ChangeClientTeam(i, TEAM_RED);
-            num_red++;
+            players[num_players] = i;
+            num_players++;
         }
     }
     
     // Select players to become Fluttershys
     new num_fluttershys = 0;
-    new fshy_goal = RoundToCeil(FloatMul(float(num_red), fluttershy_ratio));
+    new fshy_goal = RoundToCeil(FloatMul(float(num_players), fluttershy_ratio));
+    new client;
+    
     while (num_fluttershys < fshy_goal)
     {
-        new client = GetRandomInt(1, MaxClients);
-        if (IsClientInGame(client) && !IsClientObserver(client) && !is_fluttershy[client])
+        client = players[GetRandomInt(0, num_players - 1)];
+        if (!is_fluttershy[client])
         {
             num_fluttershys++;
             MakeFluttershy(client);
@@ -358,7 +364,7 @@ EnablePlugin()
     {
         if (IsClientInGame(i))
         {
-            OnClientPutInServer(i);
+            SetupPlayer(i);
         }
     }
     
@@ -378,8 +384,10 @@ EnablePlugin()
 
 /**
  * Turns of the plugin. Unhooks events and restores console variables.
+ *
+ * @param unloading Set to true only if this function is being called due to a full unload of the plugin.
  */
-DisablePlugin()
+DisablePlugin(bool:unloading = false)
 {
     if (!enabled)
         return;
@@ -391,16 +399,19 @@ DisablePlugin()
     SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
     SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
     
-    // Unhook commands
-    RemoveCommandListener(JoinTeamCommand, "jointeam");
-    RemoveCommandListener(JoinClassCommand, "joinclass");
-    RemoveCommandListener(BlockCommandFluttershy, "kill");
-    RemoveCommandListener(SpectateCommand, "spectate");
-    RemoveCommandListener(BlockCommandFluttershy, "explode");
+    // Unhook commands and events. If the plugin is ending, these have already been removed.
+    if (!unloading)
+    {
+        RemoveCommandListener(JoinTeamCommand, "jointeam");
+        RemoveCommandListener(JoinClassCommand, "joinclass");
+        RemoveCommandListener(BlockCommandFluttershy, "kill");
+        RemoveCommandListener(SpectateCommand, "spectate");
+        RemoveCommandListener(BlockCommandFluttershy, "explode");
     
-    UnhookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
-    UnhookEvent("teamplay_round_win", RoundEnd);
-    UnhookEvent("teamplay_round_stalemate", RoundEnd);
+        UnhookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
+        UnhookEvent("teamplay_round_win", RoundEnd);
+        UnhookEvent("teamplay_round_stalemate", RoundEnd);
+    }
     
     // Remove SDKHooks player event hooks
     for (new i = 1; i <= MaxClients; i++)
@@ -481,6 +492,7 @@ public PreThinkPost(client)
         SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", GetPlayerWeaponSlot(client, SLOT_MELEE));
     
     // Slow scouts to 100% move speed
+    // TODO: Interpolation makes this feel extremely jerky, maybe there's another way to balance scouts.
     if (!is_fluttershy[client] && TF2_GetPlayerClass(client) == TFClass_Scout)
         SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
     
@@ -608,7 +620,7 @@ public Action:ReloadFlamethrower(Handle:timer, any:client)
  */
 public OnPluginEnd()
 {
-    DisablePlugin();
+    DisablePlugin(true);
 }
 
 /**
@@ -619,15 +631,23 @@ public OnPluginEnd()
 public OnClientPutInServer(client)
 {
     if (enabled)
-    {
-        SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-        SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
-        SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
-        SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
-        SDKHook(client, SDKHook_Spawn, OnSpawn);
-        SDKHook(client, SDKHook_PreThinkPost, PreThinkPost);
-        ChangeClientTeam(client, TEAM_RED);
-    }
+        SetupPlayer(client);
+}
+
+/**
+ * Hooks player events and moves player to RED.
+ *
+ * @param client Index of the client.
+ */
+SetupPlayer(client)
+{
+    SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+    SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
+    SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
+    SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
+    SDKHook(client, SDKHook_Spawn, OnSpawn);
+    SDKHook(client, SDKHook_PreThinkPost, PreThinkPost);
+    ChangeClientTeam(client, TEAM_RED);
 }
 
 /**
@@ -863,7 +883,7 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
         FreezePlayer(victim, attacker);
     }
     // If ally is hit and frozen, unfreeze him
-    else if (attacker != 0 && GetClientTeam(victim) == GetClientTeam(attacker) && TF2_IsPlayerInCondition(victim, TFCond_Dazed) && weapon == GetPlayerWeaponSlot(attacker, 2))
+    else if (attacker != 0 && victim != attacker && GetClientTeam(victim) == GetClientTeam(attacker) && TF2_IsPlayerInCondition(victim, TFCond_Dazed) && weapon == GetPlayerWeaponSlot(attacker, 2))
     {
         UnfreezePlayer(victim, attacker);
     }
@@ -970,10 +990,32 @@ public Action:RemoveFreezeImmunity(Handle:timer, any:user_id)
  */
 GetCustomClientName(client, String:name[], length)
 {
-    if (client < 1)
+    if (client < 1 || client > MaxClients || !IsClientInGame(client))
         strcopy(name, length, "The Guardians");
     else
         GetClientName(client, name, length);
+}
+
+/**
+ * Command handler for enabling this plugin.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
+public Action:EnableCommand(client, args)
+{
+    ServerCommand("freezetag_enabled 1");
+}
+
+/**
+ * Command handler for disabling this plugin.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
+public Action:DisableCommand(client, args)
+{
+    ServerCommand("freezetag_enabled 0");
 }
 
 /**
@@ -1269,9 +1311,11 @@ MakeFluttershy(client)
         TF2_SetPlayerClass(client, TFClass_Medic);
         TF2_RespawnPlayer(client);
         TF2_RegeneratePlayer(client);
-        displayed_health[client] = max_hp < 1000 ? max_hp : 1000;
+        displayed_health[client] = max_hp - ((max_hp / 1000) * 1000);
+        if (displayed_health[client] <= 0) displayed_health[client] = 1000;
         current_health[client] = max_hp;
         SetEntityHealth(client, displayed_health[client]);
+        PrintToChat(client, "%t", "CurrentHealth", current_health[client]);
     }
 }
 
