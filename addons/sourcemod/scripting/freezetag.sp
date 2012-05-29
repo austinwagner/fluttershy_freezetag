@@ -77,6 +77,8 @@ new String:dc_while_stunned[MAX_DC_PROT][100];
 new bool:airblast_cooldown[MAX_CLIENT_IDS];
 new Handle:airblast_timer[MAX_CLIENT_IDS];
 new Handle:reload_timer[MAX_CLIENT_IDS];
+new Handle:beacon_timer[MAX_CLIENT_IDS];
+new Float:beacon_radius[MAX_CLIENT_IDS];
 
 new killer[4];
 new num_killers;
@@ -84,6 +86,8 @@ new num_dc_while_stunned;
 new ammo_offset;
 new master_cp = -1;
 new bool:win_conditions_checked;
+new ring_model;
+new halo_model;
 
 
 /**
@@ -436,6 +440,12 @@ DisablePlugin(bool:unloading = false)
             KillTimer(airblast_timer[i]);
             airblast_timer[i] = INVALID_HANDLE;
         }  
+        
+        if (beacon_timer[i] != INVALID_HANDLE)
+        {
+            KillTimer(beacon_timer[i]);
+            beacon_timer[i] = INVALID_HANDLE;
+        }
     }   
      
     ServerCommand("mp_scrambleteams");
@@ -459,6 +469,9 @@ public OnMapStart()
             LoadSound(path);
         }
     }
+    
+    ring_model = PrecacheModel("materials/sprites/laser.vmt");
+    halo_model = PrecacheModel("materials/sprites/halo01.vmt");
 }
 
 /**
@@ -868,12 +881,18 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 
     if (is_fluttershy[victim])
     {
-        // Damage doesn't get modified by crits or distance until after OnTakeDamage has run
-        // Since we need to wait for OnTakeDamage to complete, set the player's health 
-        // very high to prevent them from dying during OnTakeDamage. We will force the player
-        // to die later if necessary
-        SetEntityHealth(victim, PREVENT_DEATH_HP);
-        
+        if (GetClientTeam(victim) == GetClientTeam(attacker))
+        {
+            damage = 0.0;
+        }
+        else
+        {
+            // Damage doesn't get modified by crits or distance until after OnTakeDamage has run
+            // Since we need to wait for OnTakeDamage to complete, set the player's health 
+            // very high to prevent them from dying during OnTakeDamage. We will force the player
+            // to die later if necessary
+            SetEntityHealth(victim, PREVENT_DEATH_HP);
+        }
         return Plugin_Changed;
     }
         
@@ -938,6 +957,7 @@ FreezePlayer(victim, attacker)
         TF2_RemoveCondition(victim, TFCond_Dazed); // Prevent bonk from blocking admin freeze
         TF2_StunPlayer(victim, freeze_duration, 0.0, TF_STUNFLAG_BONKSTUCK, attacker);
         stun_immunity[victim] = true;
+        StartBeacon(victim);
         CheckWinCondition();
     }
 }
@@ -967,6 +987,7 @@ UnfreezePlayer(victim, attacker)
         stun_immunity[victim] = true;
         TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
+        StopBeacon(victim);
     }
 }
 
@@ -1193,6 +1214,7 @@ MakeFluttershy(client)
         current_health[client] = max_hp;
         SetEntityHealth(client, displayed_health[client]);
         PrintToChat(client, "%t", "CurrentHealth", current_health[client]);
+        StartBeacon(client);
     }
 }
 
@@ -1214,6 +1236,7 @@ ClearFluttershy(client, attacker)
         TF2_SetPlayerClass(client, TFClass_Soldier);
         TF2_RespawnPlayer(client);
         TF2_RegeneratePlayer(client);
+        StopBeacon(client);
         CheckWinCondition();
     }
 }
@@ -1392,10 +1415,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
 bool:IsRedClassAllowed(const String:class[])
 {
     new TFClassType:class_enum = TF2_GetClass(class);
-    if (class_enum != TFClass_Unknown)
-        return IsRedClassAllowedByEnum(class_enum);
-    else
-        return false;
+    return IsRedClassAllowedByEnum(class_enum);
 }
 
 /** 
@@ -1480,9 +1500,62 @@ CheckWinCondition(bool:round_end = false)
 
 StartBeacon(client)
 {
+    if (beacon_timer[client] == INVALID_HANDLE)
+    {
+        if (is_fluttershy[client])
+        {
+            beacon_radius[client] = 260.0;
+            beacon_timer[client] = CreateTimer(1.0, SpawnBeacon, client, TIMER_REPEAT);
+        }
+        else
+        {
+            beacon_radius[client] = 40.0;
+            beacon_timer[client] = CreateTimer(5.0, SpawnBeacon, client, TIMER_REPEAT);
+        }
+    }
 }
 
 StopBeacon(client)
 {
+    if (beacon_timer[client] != INVALID_HANDLE)
+    {
+        KillTimer(beacon_timer[client]);
+        beacon_timer[client] = INVALID_HANDLE;
+    }
 }
 
+/**
+ * Timer handler for making a beacon.
+ *
+ * @param timer A handle to the timer that triggered this callback.
+ * @param client Index of the client.
+ */
+public Action:SpawnBeacon(Handle:timer, any:client)
+{
+    decl Float:position[3];
+    decl color[4];
+    
+    if (client > 0 && IsClientInGame(client) && !IsClientObserver(client))
+    {
+        GetClientAbsOrigin(client, position);
+        position[2] += 20;
+        
+        
+        
+        if (is_fluttershy[client])
+        {
+            color = {0, 0, 255, 255};
+        }
+        else
+        {
+            color = {255, 0, 0, 255};
+            if (beacon_radius[client] < 800)
+                beacon_radius[client] += 20.0;
+        }
+            
+        TE_SetupBeamRingPoint(position, 40.0, beacon_radius[client], ring_model, halo_model, 0, 15, 0.5, 30.0, 0.0, color, 10, 0);
+        TE_SendToAll();
+    } else {
+        StopBeacon(client);
+    }
+}
