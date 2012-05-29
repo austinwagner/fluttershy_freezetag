@@ -950,7 +950,6 @@ FreezePlayer(victim, attacker)
     {
         GetArrayString(sounds[SND_FREEZE], GetRandomInt(0, GetArraySize(sounds[SND_FREEZE]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path, attacker, _, SNDLEVEL_TRAIN);
-        PrintToChatAll("%t", "PlayerFrozen", victim_name, attacker_name);
         TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
         TF2_RemoveCondition(victim, TFCond_Dazed); // Prevent bonk from blocking admin freeze
@@ -982,7 +981,6 @@ UnfreezePlayer(victim, attacker)
     {
         GetArrayString(sounds[SND_UNFREEZE], GetRandomInt(0, GetArraySize(sounds[SND_UNFREEZE]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path, victim, _, SNDLEVEL_TRAIN);
-        PrintToChatAll("%t", "PlayerUnfrozen", victim_name, attacker_name);
         TF2_RemoveCondition(victim, TFCond_Dazed);
         stun_immunity[victim] = true;
         TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
@@ -1391,7 +1389,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     else
     {
         // Handle class change manually
-        new TFClassType:class_enum = TF2_GetClass(class);
+        new TFClassType:class_enum = ClassNameToEnum(class);
         if (class_enum != TFClass_Unknown)
         { 
             if (reload_timer[client] != INVALID_HANDLE)
@@ -1405,6 +1403,36 @@ public Action:JoinClassCommand(client, const String:command[], argc)
         }
         return Plugin_Handled;
     }
+}
+
+/**
+ * Finds the TFClassType enum matching the class name.
+ * 
+ * @param class The name of the class (from the joinclass command).
+ * @return The class if the name is valid, otherwise TFClass_Unknown.
+ */
+TFClassType:ClassNameToEnum(const String:class[])
+{
+    if (StrEqual(class, "scout", false))
+        return TFClass_Scout;
+    else if (StrEqual(class, "medic", false))
+        return TFClass_Medic;
+    else if (StrEqual(class, "sniper", false))
+        return TFClass_Sniper;
+    else if (StrEqual(class, "heavyweap", false))
+        return TFClass_Heavy;
+    else if (StrEqual(class, "demoman", false))
+        return TFClass_DemoMan;
+    else if (StrEqual(class, "spy", false))
+        return TFClass_Spy;
+    else if (StrEqual(class, "engineer", false))
+        return TFClass_Engineer;
+    else if (StrEqual(class, "soldier", false))
+        return TFClass_Soldier;
+    else if (StrEqual(class, "pyro", false))
+        return TFClass_Pyro;
+    else
+        return TFClass_Unknown;
 }
 
 /**
@@ -1494,8 +1522,12 @@ CheckWinCondition(bool:round_end = false)
         }     
       
         win_conditions_checked = true;
-        SetVariantInt(TEAM_BLU);
-        AcceptEntityInput(master_cp, "SetWinner");
+        
+        if (!round_end)
+        {
+            SetVariantInt(TEAM_BLU);
+            AcceptEntityInput(master_cp, "SetWinner");
+        }
     }
 }
 
