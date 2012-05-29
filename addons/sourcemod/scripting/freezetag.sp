@@ -248,6 +248,8 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
             players[num_players] = i;
             num_players++;
         }
+        StopBeacon(i);
+        SetEntProp(i, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
     }
     
     // Select players to become Fluttershys
@@ -441,11 +443,8 @@ DisablePlugin(bool:unloading = false)
             airblast_timer[i] = INVALID_HANDLE;
         }  
         
-        if (beacon_timer[i] != INVALID_HANDLE)
-        {
-            KillTimer(beacon_timer[i]);
-            beacon_timer[i] = INVALID_HANDLE;
-        }
+        StopBeacon(i);
+        SetEntProp(i, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
     }   
      
     ServerCommand("mp_scrambleteams");
@@ -956,6 +955,7 @@ FreezePlayer(victim, attacker)
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
         TF2_RemoveCondition(victim, TFCond_Dazed); // Prevent bonk from blocking admin freeze
         TF2_StunPlayer(victim, freeze_duration, 0.0, TF_STUNFLAG_BONKSTUCK, attacker);
+        SetEntProp(victim, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
         stun_immunity[victim] = true;
         StartBeacon(victim);
         CheckWinCondition();
@@ -978,7 +978,7 @@ UnfreezePlayer(victim, attacker)
     GetCustomClientName(victim, victim_name, sizeof(victim_name));
     GetCustomClientName(attacker, attacker_name, sizeof(attacker_name));
     
-    if (!stun_immunity[victim] && TF2_IsPlayerInCondition(victim, TFCond_Dazed))
+    if (!stun_immunity[victim] && !stun_immunity[attacker] && TF2_IsPlayerInCondition(victim, TFCond_Dazed))
     {
         GetArrayString(sounds[SND_UNFREEZE], GetRandomInt(0, GetArraySize(sounds[SND_UNFREEZE]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path, victim, _, SNDLEVEL_TRAIN);
@@ -987,6 +987,7 @@ UnfreezePlayer(victim, attacker)
         stun_immunity[victim] = true;
         TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
+        SetEntProp(victim, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
         StopBeacon(victim);
     }
 }
@@ -1504,12 +1505,12 @@ StartBeacon(client)
     {
         if (is_fluttershy[client])
         {
-            beacon_radius[client] = 260.0;
+            beacon_radius[client] = 275.0;
             beacon_timer[client] = CreateTimer(1.0, SpawnBeacon, client, TIMER_REPEAT);
         }
         else
         {
-            beacon_radius[client] = 40.0;
+            beacon_radius[client] = 0.0;
             beacon_timer[client] = CreateTimer(5.0, SpawnBeacon, client, TIMER_REPEAT);
         }
     }
@@ -1550,7 +1551,7 @@ public Action:SpawnBeacon(Handle:timer, any:client)
         {
             color = {255, 0, 0, 255};
             if (beacon_radius[client] < 800)
-                beacon_radius[client] += 20.0;
+                beacon_radius[client] += 40.0;
         }
             
         TE_SetupBeamRingPoint(position, 40.0, beacon_radius[client], ring_model, halo_model, 0, 15, 0.5, 30.0, 0.0, color, 10, 0);
