@@ -138,12 +138,12 @@ public OnPluginStart()
     teams_unbalance_cvar = FindConVar("mp_teams_unbalance_limit");
     
     // Register admin commands for rearranging players and debugging
-    RegAdminCmd("freezetag_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("freezetag_freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("freezetag_flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("freezetag_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("freezetag_enable", EnableCommand, ADMFLAG_GENERIC);
-    RegAdminCmd("freezetag_disable", DisableCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("ft_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("ft_freeze", FreezePlayerCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("ft_flutts", MakeFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("ft_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("ft_enable", EnableCommand, ADMFLAG_GENERIC);
+    RegAdminCmd("ft_disable", DisableCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     
@@ -208,7 +208,7 @@ LoadSoundConfig()
  */
 public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 {
-    CheckWinCondition();
+    CheckWinCondition(true);
 }
 
 /**
@@ -931,8 +931,9 @@ FreezePlayer(victim, attacker)
     if (!stun_immunity[victim] && ((attacker > 0 && !TF2_IsPlayerInCondition(victim, TFCond_Dazed)) || attacker <= 0))
     {
         GetArrayString(sounds[SND_FREEZE], GetRandomInt(0, GetArraySize(sounds[SND_FREEZE]) - 1), sound_path, sizeof(sound_path));
-        EmitSoundToAll(sound_path, attacker);
+        EmitSoundToAll(sound_path, attacker, _, SNDLEVEL_TRAIN);
         PrintToChatAll("%t", "PlayerFrozen", victim_name, attacker_name);
+        TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
         TF2_RemoveCondition(victim, TFCond_Dazed); // Prevent bonk from blocking admin freeze
         TF2_StunPlayer(victim, freeze_duration, 0.0, TF_STUNFLAG_BONKSTUCK, attacker);
@@ -960,10 +961,11 @@ UnfreezePlayer(victim, attacker)
     if (!stun_immunity[victim] && TF2_IsPlayerInCondition(victim, TFCond_Dazed))
     {
         GetArrayString(sounds[SND_UNFREEZE], GetRandomInt(0, GetArraySize(sounds[SND_UNFREEZE]) - 1), sound_path, sizeof(sound_path));
-        EmitSoundToAll(sound_path, victim);
+        EmitSoundToAll(sound_path, victim, _, SNDLEVEL_TRAIN);
         PrintToChatAll("%t", "PlayerUnfrozen", victim_name, attacker_name);
         TF2_RemoveCondition(victim, TFCond_Dazed);
         stun_immunity[victim] = true;
+        TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
     }
 }
@@ -1026,16 +1028,33 @@ public Action:DisableCommand(client, args)
  */
 public Action:UnfreezePlayerCommand(client, args)
 {
+    decl String:arg[MAX_NAME_LENGTH];
     decl String:name[MAX_NAME_LENGTH];
+    decl targets[MAX_CLIENT_IDS];
+    new bool:tn_is_ml;
+       
+	if (args < 1)
+	{
+		PrintToConsole(client, "Usage: ft_unfreeze <#userid|name>");
+		return Plugin_Handled;
+	}
     
-    name[0] = '\0';
-    GetCmdArgString(name, sizeof(name));
-     
-    new target = SelectPlayer(client, UnfreezePlayerMenuHandler, name);
-    if (target > 0)
-        UnfreezePlayer(client, 0);
-        
-    return Plugin_Handled;
+	GetCmdArg(1, arg, sizeof(arg));
+    new num_targets = ProcessTargetString(arg, client, targets, sizeof(targets), 0, name, sizeof(name), tn_is_ml);
+                                
+    if (num_targets <= 0)
+    {
+        ReplyToTargetError(client, num_targets);
+    }
+    else
+    {
+        for (new i = 0; i < num_targets; i++)
+        {
+            UnfreezePlayer(targets[i], 0);
+        }
+    }
+ 
+	return Plugin_Handled;
 }
 
 /**
@@ -1046,18 +1065,34 @@ public Action:UnfreezePlayerCommand(client, args)
  */
 public Action:FreezePlayerCommand(client, args)
 {
+    decl String:arg[MAX_NAME_LENGTH];
     decl String:name[MAX_NAME_LENGTH];
+    decl targets[MAX_CLIENT_IDS];
+    new bool:tn_is_ml;
+       
+	if (args < 1)
+	{
+		PrintToConsole(client, "Usage: ft_freeze <#userid|name>");
+		return Plugin_Handled;
+	}
     
-    name[0] = '\0';
-    GetCmdArgString(name, sizeof(name));
-     
-    new target = SelectPlayer(client, FreezePlayerMenuHandler, name);
-    if (target > 0)
-        FreezePlayer(client, 0);
-        
-    return Plugin_Handled;
+	GetCmdArg(1, arg, sizeof(arg));
+    new num_targets = ProcessTargetString(arg, client, targets, sizeof(targets), 0, name, sizeof(name), tn_is_ml);
+                                
+    if (num_targets <= 0)
+    {
+        ReplyToTargetError(client, num_targets);
+    }
+    else
+    {
+        for (new i = 0; i < num_targets; i++)
+        {
+            FreezePlayer(targets[i], 0);
+        }
+    }
+ 
+	return Plugin_Handled;
 }
-
 
 /**
  * Command handler for turning a player into a Fluttershy.
@@ -1067,101 +1102,33 @@ public Action:FreezePlayerCommand(client, args)
  */
 public Action:MakeFluttershyCommand(client, args)
 {
+    decl String:arg[MAX_NAME_LENGTH];
     decl String:name[MAX_NAME_LENGTH];
+    decl targets[MAX_CLIENT_IDS];
+    new bool:tn_is_ml;
+       
+	if (args < 1)
+	{
+		PrintToConsole(client, "Usage: ft_flutts <#userid|name>");
+		return Plugin_Handled;
+	}
     
-    name[0] = '\0';
-    GetCmdArgString(name, sizeof(name));
-     
-    new target = SelectPlayer(client, MakeFluttershyMenuHandler, name);
-    if (target > 0)
-        MakeFluttershy(target);
-        
-    return Plugin_Handled;
-}
-
-/**
- * Selects a player by name, defaulting to a menu if no name is specified.
- * Prints a message to the client if the player name is not found or if more
- * than one player matches the search string. The name "@me" will return the
- * id of the client making the request.
- *
- * @param client The client who is performing the action.
- * @param handler A fallback menu handler if the client selects the name using the menu.
- * @param search_name The player name to search for.
- * @return The client ID of the player if found, otherwise -1.
-*/
-SelectPlayer(client, MenuHandler:handler, String:search_name[])
-{
-    decl String:user_id[16];
-    decl String:name[MAX_NAME_LENGTH];
-    
-    if (search_name[0] == '\0')
+	GetCmdArg(1, arg, sizeof(arg));
+    new num_targets = ProcessTargetString(arg, client, targets, sizeof(targets), 0, name, sizeof(name), tn_is_ml);
+                                
+    if (num_targets <= 0)
     {
-        new Handle:menu = CreateMenu(handler);
-        SetMenuTitle(menu, "Select a player:");
-        for (new i = 1; i <= MaxClients; i++)
-        {
-            if (IsClientInGame(i))
-            {
-                GetClientName(i, name, sizeof(name));
-                IntToString(GetClientUserId(i), user_id, sizeof(user_id));
-                AddMenuItem(menu, user_id, name);
-            }
-        }
-        
-        SetMenuExitButton(menu, true);
-        DisplayMenu(menu, client, 20);
-        
-        return -1;
-    }
-    else if (StrEqual(search_name, "@me", false))
-    {
-        return client;
+        ReplyToTargetError(client, num_targets);
     }
     else
-    { 
-        new target = -1;
-        new startidx = 0;
-        
-        if (search_name[0] == '"')
+    {
+        for (new i = 0; i < num_targets; i++)
         {
-            startidx = 1;
-            new len = strlen(search_name);
-            if (search_name[len-1] == '"')
-            {
-                search_name[len-1] = '\0';
-            }
-        }
-        
-        for (new i = 1; i <= MaxClients; i++)
-        {
-            if (IsClientInGame(i))
-            {
-                GetClientName(i, name, sizeof(name));
-                if (StrContains(name, search_name[startidx], false) > -1)
-                {
-                    if (target != -1)
-                    {
-                        ReplyToCommand(client, "%t", "AmbiguousPlayer", search_name[startidx]);
-                        return -1;
-                    }
-                    else
-                    {
-                        target = i;
-                    }
-                }
-            }
-        }
-        if (target > 0)
-        {
-            return target;
-        }
-        else
-        {
-            ReplyToCommand(client, "%t", "PlayerNotFound", search_name[startidx]);
-            return -1;
+            MakeFluttershy(targets[i]);
         }
     }
+ 
+	return Plugin_Handled;
 }
 
 /**
@@ -1172,125 +1139,35 @@ SelectPlayer(client, MenuHandler:handler, String:search_name[])
  */
 public Action:ClearFluttershyCommand(client, args)
 {
+    decl String:arg[MAX_NAME_LENGTH];
     decl String:name[MAX_NAME_LENGTH];
+    decl targets[MAX_CLIENT_IDS];
+    new bool:tn_is_ml;
+       
+	if (args < 1)
+	{
+		PrintToConsole(client, "Usage: ft_unflutts <#userid|name>");
+		return Plugin_Handled;
+	}
     
-    name[0] = '\0';
-    GetCmdArgString(name, sizeof(name));
-     
-    new target = SelectPlayer(client, ClearFluttershyMenuHandler, name);
-    if (target > 0)
-    {     
-        GetCustomClientName(target, name, sizeof(name));
-        PrintToChatAll("%t", "ClearFluttershy", name);
-        ClearFluttershy(target, 0);
-    }
-        
-    return Plugin_Handled;
-}
-
-/**
- * Menu handler for moving a player to RED.
- *
- * @param menu A handle to the menu that called this handler.
- * @param action The action that the user took on the menu.
- * @param param1 Unknown.
- * @param param2 Unknown.
- */
-public ClearFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2)
-{
-    decl String:info[32];
-    decl String:name[MAX_NAME_LENGTH];
-
-    if (action == MenuAction_Select)
+	GetCmdArg(1, arg, sizeof(arg));
+    new num_targets = ProcessTargetString(arg, client, targets, sizeof(targets), 0, name, sizeof(name), tn_is_ml);
+                                
+    if (num_targets <= 0)
     {
-        GetMenuItem(menu, param2, info, sizeof(info));
-        new target = GetClientOfUserId(StringToInt(info));
-        if (IsClientInGame(target))
+        ReplyToTargetError(client, num_targets);
+    }
+    else
+    {
+        for (new i = 0; i < num_targets; i++)
         {
-            GetCustomClientName(target, name, sizeof(name));
+            GetCustomClientName(targets[i], name, sizeof(name));
             PrintToChatAll("%t", "ClearFluttershy", name);
-            ClearFluttershy(target, 0);
+            ClearFluttershy(targets[i], 0);
         }
     }
-    else if (action == MenuAction_End)
-    {
-        CloseHandle(menu);
-    }
-}
-
-/**
- * Menu handler for moving a player to the Fluttershy team.
- *
- * @param menu A handle to the menu that called this handler.
- * @param action The action that the user took on the menu.
- * @param param1 Unknown.
- * @param param2 Unknown.
- */
-public MakeFluttershyMenuHandler(Handle:menu, MenuAction:action, param1, param2)
-{
-    decl String:info[32];
-
-    if (action == MenuAction_Select)
-    {
-        GetMenuItem(menu, param2, info, sizeof(info));
-        new target = GetClientOfUserId(StringToInt(info));
-        if (IsClientInGame(target))
-            MakeFluttershy(target);
-    }
-    else if (action == MenuAction_End)
-    {
-        CloseHandle(menu);
-    }
-}
-
-/**
- * Menu handler for unfreezing a player.
- *
- * @param menu A handle to the menu that called this handler.
- * @param action The action that the user took on the menu.
- * @param param1 Unknown.
- * @param param2 Unknown.
- */
-public UnfreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
-{
-    decl String:info[32];
-
-    if (action == MenuAction_Select)
-    {
-        GetMenuItem(menu, param2, info, sizeof(info));
-        new target = GetClientOfUserId(StringToInt(info));
-        if (IsClientInGame(target))
-            UnfreezePlayer(target, 0);
-    }
-    else if (action == MenuAction_End)
-    {
-        CloseHandle(menu);
-    }
-}
-
-/**
- * Menu handler for freezing a player.
- *
- * @param menu A handle to the menu that called this handler.
- * @param action The action that the user took on the menu.
- * @param param1 Unknown.
- * @param param2 Unknown.
- */
-public FreezePlayerMenuHandler(Handle:menu, MenuAction:action, param1, param2)
-{
-    decl String:info[32];
-
-    if (action == MenuAction_Select)
-    {
-        GetMenuItem(menu, param2, info, sizeof(info));
-        new target = GetClientOfUserId(StringToInt(info));
-        if (IsClientInGame(target))
-            FreezePlayer(target, 0);
-    }
-    else if (action == MenuAction_End)
-    {
-        CloseHandle(menu);
-    }
+ 
+	return Plugin_Handled;
 }
 
 /**
@@ -1535,7 +1412,7 @@ bool:IsRedClassAllowedByEnum(TFClassType:class)
 /**
  * Check if the game has been won and list the winners if it has.
  */
-CheckWinCondition()
+CheckWinCondition(bool:round_end = false)
 {
     decl String:sound_path[PLATFORM_MAX_PATH];
     new bool:fluttershy_exists = false;
@@ -1563,7 +1440,7 @@ CheckWinCondition()
     if (!fluttershy_exists)
     {
         GetArrayString(sounds[SND_LOSS], GetRandomInt(0, GetArraySize(sounds[SND_LOSS]) - 1), sound_path, sizeof(sound_path));
-        EmitSoundToAll(sound_path);
+        EmitSoundToAll(sound_path, _, _, SNDLEVEL_TRAIN);
         PrintToChatAll("%t", "FluttershyLose");
         PrintToChatAll("%t", "Winners");
         for (new i = 0; i < num_killers; i++)
@@ -1577,7 +1454,7 @@ CheckWinCondition()
         SetVariantInt(TEAM_RED);
         AcceptEntityInput(master_cp, "SetWinner");
     }
-    else if (all_players_stunned)
+    else if (all_players_stunned || round_end)
     {
         GetArrayString(sounds[SND_WIN], GetRandomInt(0, GetArraySize(sounds[SND_WIN]) - 1), sound_path, sizeof(sound_path));
         EmitSoundToAll(sound_path);
@@ -1600,3 +1477,12 @@ CheckWinCondition()
         AcceptEntityInput(master_cp, "SetWinner");
     }
 }
+
+StartBeacon(client)
+{
+}
+
+StopBeacon(client)
+{
+}
+
