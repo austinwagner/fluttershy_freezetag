@@ -4,6 +4,7 @@
 #include <sourcemod>
 #include <tf2_stocks>
 #include <sdkhooks>
+#include <tf2items_giveweapon>
 
 #define PLUGIN_VERSION "0.1.2"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
@@ -19,6 +20,8 @@
 #define SND_UNFREEZE 1
 #define SND_WIN 2
 #define SND_LOSS 3
+
+#define SNDLEVEL_DEFAULT SNDLEVEL_RAIDSIREN
 
 #define PREVENT_DEATH_HP 3000
 #define SHAME_STUN_DURATION 5000.0
@@ -247,9 +250,9 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
             ChangeClientTeam(i, TEAM_RED);
             players[num_players] = i;
             num_players++;
+            SetEntProp(i, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
         }
         StopBeacon(i);
-        SetEntProp(i, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
     }
     
     // Select players to become Fluttershys
@@ -384,6 +387,7 @@ EnablePlugin()
     HookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
     HookEvent("teamplay_round_win", RoundEnd);
     HookEvent("teamplay_round_stalemate", RoundEnd);
+    HookEvent("post_inventory_application", PostInventoryApplication);
     
     ServerCommand("mp_restartgame_immediate 1");
 }
@@ -417,6 +421,7 @@ DisablePlugin(bool:unloading = false)
         UnhookEvent("teamplay_round_start", RoundStart, EventHookMode_Pre);
         UnhookEvent("teamplay_round_win", RoundEnd);
         UnhookEvent("teamplay_round_stalemate", RoundEnd);
+        UnhookEvent("post_inventory_application", PostInventoryApplication);
     }
     
     // Remove SDKHooks player event hooks
@@ -430,6 +435,9 @@ DisablePlugin(bool:unloading = false)
             SDKUnhook(i, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
             SDKUnhook(i, SDKHook_Spawn, OnSpawn);
             SDKUnhook(i, SDKHook_PreThinkPost, PreThinkPost);
+            
+            if (!IsClientObserver(i))
+                SetEntProp(i, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
         }
         if (reload_timer[i] != INVALID_HANDLE)
         {
@@ -444,7 +452,7 @@ DisablePlugin(bool:unloading = false)
         }  
         
         StopBeacon(i);
-        SetEntProp(i, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
+        
     }   
      
     ServerCommand("mp_scrambleteams");
@@ -503,10 +511,45 @@ public PreThinkPost(client)
     if (is_fluttershy[client] && GetPlayerWeaponSlot(client, SLOT_MELEE) > 0)
         SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", GetPlayerWeaponSlot(client, SLOT_MELEE));
     
-    // Slow scouts to 100% move speed
-    // TODO: Interpolation makes this feel extremely jerky, maybe there's another way to balance scouts.
-    if (!is_fluttershy[client] && TF2_GetPlayerClass(client) == TFClass_Scout)
-        SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
+    switch (TF2_GetPlayerClass(client))
+    {
+    case TFClass_Scout:
+    {
+        SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 342.0);
+    }
+    case TFClass_DemoMan:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 310.0);
+    }
+    case TFClass_Pyro:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
+    }
+    case TFClass_Sniper:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
+    }
+    case TFClass_Spy:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
+    }
+    case TFClass_Heavy:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
+    }
+    case TFClass_Soldier:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 310.0);
+    }
+    case TFClass_Engineer:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
+    }
+    case TFClass_Medic:
+    {
+        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
+    }
+    }
     
     // Handle reloading weapons that normally don't have a reload
     if (TF2_GetPlayerClass(client) == TFClass_Heavy)
@@ -880,6 +923,7 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 
     if (is_fluttershy[victim])
     {
+        damagetype |= _:DMG_PREVENT_PHYSICS_FORCE;
         if (GetClientTeam(victim) == GetClientTeam(attacker))
         {
             damage = 0.0;
@@ -949,7 +993,7 @@ FreezePlayer(victim, attacker)
     if (!stun_immunity[victim] && ((attacker > 0 && !TF2_IsPlayerInCondition(victim, TFCond_Dazed)) || attacker <= 0))
     {
         GetArrayString(sounds[SND_FREEZE], GetRandomInt(0, GetArraySize(sounds[SND_FREEZE]) - 1), sound_path, sizeof(sound_path));
-        EmitSoundToAll(sound_path, attacker, _, SNDLEVEL_TRAIN);
+        EmitSoundToAll(sound_path, attacker, _, SNDLEVEL_DEFAULT);
         TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
         TF2_RemoveCondition(victim, TFCond_Dazed); // Prevent bonk from blocking admin freeze
@@ -980,7 +1024,7 @@ UnfreezePlayer(victim, attacker)
     if (!stun_immunity[victim] && !stun_immunity[attacker] && TF2_IsPlayerInCondition(victim, TFCond_Dazed))
     {
         GetArrayString(sounds[SND_UNFREEZE], GetRandomInt(0, GetArraySize(sounds[SND_UNFREEZE]) - 1), sound_path, sizeof(sound_path));
-        EmitSoundToAll(sound_path, victim, _, SNDLEVEL_TRAIN);
+        EmitSoundToAll(sound_path, victim, _, SNDLEVEL_DEFAULT);
         TF2_RemoveCondition(victim, TFCond_Dazed);
         stun_immunity[victim] = true;
         TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
@@ -1207,7 +1251,7 @@ MakeFluttershy(client)
         ChangeClientTeam(client, TEAM_BLU);
         TF2_SetPlayerClass(client, TFClass_Medic);
         TF2_RespawnPlayer(client);
-        TF2_RegeneratePlayer(client);
+        RegenVanilla(client);
         displayed_health[client] = max_hp - ((max_hp / 1000) * 1000);
         if (displayed_health[client] <= 0) displayed_health[client] = 1000;
         current_health[client] = max_hp;
@@ -1234,7 +1278,7 @@ ClearFluttershy(client, attacker)
         ChangeClientTeam(client, TEAM_BLU);
         TF2_SetPlayerClass(client, TFClass_Soldier);
         TF2_RespawnPlayer(client);
-        TF2_RegeneratePlayer(client);
+        RegenVanilla(client);
         StopBeacon(client);
         CheckWinCondition();
     }
@@ -1338,6 +1382,12 @@ public Action:BlockCommandFluttershy(client, const String:command[], argc)
 {
     if (is_fluttershy[client] || TF2_IsPlayerInCondition(client, TFCond_Dazed))
         return Plugin_Handled;
+    else if (StrEqual(command, "kill", false) || StrEqual(command, "explode", false))
+    {
+        ForcePlayerSuicide(client);
+        TF2_RespawnPlayer(client);
+        return Plugin_Handled;
+    }
     else
         return Plugin_Continue;
 }
@@ -1399,7 +1449,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
             }
             TF2_SetPlayerClass(client, class_enum);
             TF2_RespawnPlayer(client);
-            TF2_RegeneratePlayer(client);
+            RegenVanilla(client);
         }
         return Plugin_Handled;
     }
@@ -1489,7 +1539,7 @@ CheckWinCondition(bool:round_end = false)
     if (!fluttershy_exists)
     {
         GetArrayString(sounds[SND_LOSS], GetRandomInt(0, GetArraySize(sounds[SND_LOSS]) - 1), sound_path, sizeof(sound_path));
-        EmitSoundToAll(sound_path, _, _, SNDLEVEL_TRAIN);
+        EmitSoundToAll(sound_path, _, _, SNDLEVEL_DEFAULT);
         PrintToChatAll("%t", "FluttershyLose");
         PrintToChatAll("%t", "Winners");
         for (new i = 0; i < num_killers; i++)
@@ -1543,7 +1593,7 @@ StartBeacon(client)
         else
         {
             beacon_radius[client] = 0.0;
-            beacon_timer[client] = CreateTimer(5.0, SpawnBeacon, client, TIMER_REPEAT);
+            beacon_timer[client] = CreateTimer(4.0, SpawnBeacon, client, TIMER_REPEAT);
         }
     }
 }
@@ -1590,5 +1640,82 @@ public Action:SpawnBeacon(Handle:timer, any:client)
         TE_SendToAll();
     } else {
         StopBeacon(client);
+    }
+}
+
+public PostInventoryApplication(Handle:event, const String:name[], bool:dontBroadcast)
+{
+	new client = GetClientOfUserId(GetEventInt(event, "userid"));
+    SetVanillaWeapons(client);
+}
+
+RegenVanilla(client)
+{
+    TF2_RegeneratePlayer(client);
+    SetVanillaWeapons(client);
+}
+
+SetVanillaWeapons(client)
+{
+    TF2_RemoveWeaponSlot(client, 0);
+    TF2_RemoveWeaponSlot(client, 1);
+    TF2_RemoveWeaponSlot(client, 2);
+    
+    switch (TF2_GetPlayerClass(client))
+    {
+    case TFClass_Scout:
+    {
+        TF2Items_GiveWeapon(client, 13);
+        TF2Items_GiveWeapon(client, 23);
+        TF2Items_GiveWeapon(client, 0);
+    }
+    case TFClass_DemoMan:
+    {
+        TF2Items_GiveWeapon(client, 19);
+        TF2Items_GiveWeapon(client, 20);
+        TF2Items_GiveWeapon(client, 1);
+    }
+    case TFClass_Pyro:
+    {
+        TF2Items_GiveWeapon(client, 21);
+        TF2Items_GiveWeapon(client, 12);
+        TF2Items_GiveWeapon(client, 2);
+    }
+    case TFClass_Sniper:
+    {
+        TF2Items_GiveWeapon(client, 14);
+        TF2Items_GiveWeapon(client, 16);
+        TF2Items_GiveWeapon(client, 3);
+    }
+    case TFClass_Spy:
+    {
+        TF2Items_GiveWeapon(client, 24);
+        // Can't give sapper?
+        TF2Items_GiveWeapon(client, 4);
+    }
+    case TFClass_Heavy:
+    {
+        TF2Items_GiveWeapon(client, 15);
+        TF2Items_GiveWeapon(client, 11);
+        TF2Items_GiveWeapon(client, 5);
+    }
+    case TFClass_Soldier:
+    {
+        TF2Items_GiveWeapon(client, 18);
+        TF2Items_GiveWeapon(client, 10);
+        TF2Items_GiveWeapon(client, 6);
+    }
+    case TFClass_Engineer:
+    {
+        TF2Items_GiveWeapon(client, 9);
+        TF2Items_GiveWeapon(client, 22);
+        TF2Items_GiveWeapon(client, 7);
+    }
+    case TFClass_Medic:
+    {
+        TF2Items_GiveWeapon(client, 17);
+        TF2Items_GiveWeapon(client, 15);
+        TF2Items_GiveWeapon(client, 8);
+    }
     }
 }
