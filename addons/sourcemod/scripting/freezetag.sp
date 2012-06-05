@@ -1451,26 +1451,10 @@ public Action:JoinClassCommand(client, const String:command[], argc)
  */
 TFClassType:ClassNameToEnum(const String:class[])
 {
-    if (StrEqual(class, "scout", false))
-        return TFClass_Scout;
-    else if (StrEqual(class, "medic", false))
-        return TFClass_Medic;
-    else if (StrEqual(class, "sniper", false))
-        return TFClass_Sniper;
-    else if (StrEqual(class, "heavyweap", false))
+    if (StrEqual(class, "heavyweap", false))
         return TFClass_Heavy;
-    else if (StrEqual(class, "demoman", false))
-        return TFClass_DemoMan;
-    else if (StrEqual(class, "spy", false))
-        return TFClass_Spy;
-    else if (StrEqual(class, "engineer", false))
-        return TFClass_Engineer;
-    else if (StrEqual(class, "soldier", false))
-        return TFClass_Soldier;
-    else if (StrEqual(class, "pyro", false))
-        return TFClass_Pyro;
     else
-        return TFClass_Unknown;
+        return TF2_GetClass(class);
 }
 
 /**
