@@ -161,7 +161,7 @@ public OnPluginStart()
     AutoExecConfig(true, "freezetag");
     
     TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, 0, 0, 0, "45 ; 1 ; 87 ; .5 ; 107 ; 1.3", 50, _, true);
-    //TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, 2, 0, 0, "26 ; 6100 ; 57 ; -6", _, _, true);
+    TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, 2, 0, 0, "26 ; 850 ; 57 ; -6", _, _, true);
     LoadSoundConfig();
     
     if (GetConVarBool(enabled_cvar))
@@ -855,22 +855,6 @@ public Action:WeaponCanSwitchTo(client, weapon)
         return Plugin_Continue;
     else
         return Plugin_Handled;
-}
-
-/**
- * Called at the start of every server frame.
- */
-public OnGameFrame()
-{
-    if (enabled)
-    {
-        // This reverses the health degeneration of the Fluttershys
-        for (new i = 0; i < sizeof(is_fluttershy); i++)
-        {
-            if (is_fluttershy[i])
-                SetEntityHealth(i, displayed_health[i]);
-        }
-    }
 }
 
 /**
@@ -1754,8 +1738,7 @@ SetVanillaWeapons(client)
     {
         TF2Items_GiveWeapon(client, 17);
         TF2Items_GiveWeapon(client, 15);
-        //TF2Items_GiveWeapon(client, -1001);
-        TF2Items_GiveWeapon(client, 8);
+        TF2Items_GiveWeapon(client, -1001);
     }
     }
 }
