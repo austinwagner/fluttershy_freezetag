@@ -6,7 +6,7 @@
 #include <sdkhooks>
 #include <tf2items_giveweapon>
 
-#define PLUGIN_VERSION "0.1.2"
+#define PLUGIN_VERSION "0.2.0"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -160,8 +160,17 @@ public OnPluginStart()
     
     AutoExecConfig(true, "freezetag");
     
-    TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, 0, 0, 0, "45 ; 1 ; 87 ; .5 ; 107 ; 1.3", 50, _, true);
+    // Modified Minigun - Spread (106): 80%, Spinup Time (87): 50%, Deployed Movespeed (75): 209% (230 total)
+    TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, 0, 0, 0, "106 ; .8 ; 87 ; .5 ; 75 ; 2.09", 50, _, true);
+    // Modified Bonesaw - +Health (26): 850 (1000 total), Health regen (57): -6 (0 total)
     TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, 2, 0, 0, "26 ; 850 ; 57 ; -6", _, _, true);
+    // Modified Grenade Launcher - Projectile Speed (103): 110%
+    TF2Items_CreateWeapon(-1002, "tf_weapon_grenadelauncher", 19, 0, 0, 0, "103 ; 1.1", 4, _, true);
+    // Modified Sicky Launcher - +Arm Time (126): -.42 (.5 total), +Max Stickies Deployed (89): -5 (3 total), Self Pushback (59): 50%
+    TF2Items_CreateWeapon(-1003, "tf_weapon_pipebomblauncher", 20, 1, 0, 0, "126 ; -.42 ; 89 ; -5 ; 59 ; .5", 8, _, true);
+    // Modified Scattergun - Movespeed (54): 80% (320 total)
+    TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, 0, 0, 0, "54 ; .8", 6, _, true);
+    
     LoadSoundConfig();
     
     if (GetConVarBool(enabled_cvar))
@@ -518,50 +527,6 @@ public PreThinkPost(client)
 {   
     if (IsClientObserver(client))
         return;
-
-    // Force Fluttershys to equip melee weapon
-    if (is_fluttershy[client] && GetPlayerWeaponSlot(client, SLOT_MELEE) > 0)
-        SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", GetPlayerWeaponSlot(client, SLOT_MELEE));
-    
-    switch (TF2_GetPlayerClass(client))
-    {
-    case TFClass_Scout:
-    {
-        SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
-    }
-    case TFClass_DemoMan:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 310.0);
-    }
-    case TFClass_Pyro:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
-    }
-    case TFClass_Sniper:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
-    }
-    case TFClass_Spy:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
-    }
-    case TFClass_Heavy:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
-    }
-    case TFClass_Soldier:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 310.0);
-    }
-    case TFClass_Engineer:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
-    }
-    case TFClass_Medic:
-    {
-        //SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 300.0);
-    }
-    }
     
     // Handle reloading weapons that normally don't have a reload
     if (TF2_GetPlayerClass(client) == TFClass_Heavy)
@@ -1688,14 +1653,14 @@ SetVanillaWeapons(client)
     {
     case TFClass_Scout:
     {
-        TF2Items_GiveWeapon(client, 13);
+        TF2Items_GiveWeapon(client, -1004);
         TF2Items_GiveWeapon(client, 23);
         TF2Items_GiveWeapon(client, 0);
     }
     case TFClass_DemoMan:
     {
-        TF2Items_GiveWeapon(client, 19);
-        TF2Items_GiveWeapon(client, 20);
+        TF2Items_GiveWeapon(client, -1002);
+        TF2Items_GiveWeapon(client, -1003);
         TF2Items_GiveWeapon(client, 1);
     }
     case TFClass_Pyro:
@@ -1736,8 +1701,6 @@ SetVanillaWeapons(client)
     }
     case TFClass_Medic:
     {
-        TF2Items_GiveWeapon(client, 17);
-        TF2Items_GiveWeapon(client, 15);
         TF2Items_GiveWeapon(client, -1001);
     }
     }
