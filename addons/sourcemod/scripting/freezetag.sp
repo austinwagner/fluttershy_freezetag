@@ -20,6 +20,9 @@
 #define SND_UNFREEZE 1
 #define SND_WIN 2
 #define SND_LOSS 3
+#define SND_MINIGUN_RELOAD_FINISHED 4
+#define SND_FLAMETHROWER_RELOAD_FINISHED 5
+#define SND_AIRBLAST_COOLDOWN 6
 
 #define SNDLEVEL_DEFAULT SNDLEVEL_RAIDSIREN
 
@@ -37,7 +40,7 @@ public Plugin:myinfo =
 	url = ""
 };
 
-new Handle:sounds[4];
+new Handle:sounds[7];
 
 new original_ff_val;
 new original_scramble_teams_val;
@@ -82,8 +85,9 @@ new Handle:airblast_timer[MAX_CLIENT_IDS];
 new Handle:reload_timer[MAX_CLIENT_IDS];
 new Handle:beacon_timer[MAX_CLIENT_IDS];
 new Float:beacon_radius[MAX_CLIENT_IDS];
+new Handle:sound_busy_timer[MAX_CLIENT_IDS];
 
-new killer[4];
+new killer[16];
 new num_killers;
 new num_dc_while_stunned;
 new ammo_offset;
@@ -101,17 +105,17 @@ public OnPluginStart()
     LoadTranslations("freezetag.phrases");
     
     // Create Console Variables
-    max_hp_cvar = CreateConVar("freezetag_max_hp", "2000", "The amount of life Fluttershys start with.", CVAR_FLAGS);
-    freeze_duration_cvar = CreateConVar("freezetag_freeze_time", "120.0", "The amount of time in seconds a player will remain frozen for before automatically unfreezing.", CVAR_FLAGS);
+    max_hp_cvar = CreateConVar("freezetag_max_hp", "6250", "The amount of life Fluttershys start with.", CVAR_FLAGS);
+    freeze_duration_cvar = CreateConVar("freezetag_freeze_time", "300.0", "The amount of time in seconds a player will remain frozen for before automatically unfreezing.", CVAR_FLAGS);
     freeze_immunity_cvar = CreateConVar("freezetag_immunity_time", "2.0", "The amount of time in seconds during which a player cannot be unfrozen or refrozen.", CVAR_FLAGS);
     enabled_cvar = CreateConVar("freezetag_enabled", "0", "0 to disable, 1 to enable.", CVAR_FLAGS);
-    minigun_reload_time_cvar = CreateConVar("freezetag_minigun_reload", "10.0", "The amount of time in seconds it takes to reload a player's Minigun.", CVAR_FLAGS);
-    flamethrower_reload_time_cvar = CreateConVar("freezetag_flamethrower_reload", "10.0", "The amount of time in seconds it takes to reload a player's Flamethrower.", CVAR_FLAGS);
+    minigun_reload_time_cvar = CreateConVar("freezetag_minigun_reload", "5.0", "The amount of time in seconds it takes to reload a player's Minigun.", CVAR_FLAGS);
+    flamethrower_reload_time_cvar = CreateConVar("freezetag_flamethrower_reload", "5.0", "The amount of time in seconds it takes to reload a player's Flamethrower.", CVAR_FLAGS);
     minigun_ammo_cvar = CreateConVar("freezetag_minigun_ammo", "50", "The maximum number of bullets a Minigun can hold.", CVAR_FLAGS);
     flamethrower_ammo_cvar = CreateConVar("freezetag_flamethrower_ammo", "100", "The maximum amount of ammo a Flamethrower can hold.", CVAR_FLAGS);
-    airblast_cooldown_time_cvar = CreateConVar("freezetag_airblast_cooldown", "5.0", "The amount of time in seconds before a Pyro can airblast again.", CVAR_FLAGS);
+    airblast_cooldown_time_cvar = CreateConVar("freezetag_airblast_cooldown", "3.0", "The amount of time in seconds before a Pyro can airblast again.", CVAR_FLAGS);
     round_time_cvar = CreateConVar("freezetag_round_time", "300", "The amount of time in seconds that a round will last.", CVAR_FLAGS);
-    fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "9", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
+    fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "6", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
@@ -156,6 +160,8 @@ public OnPluginStart()
     
     AutoExecConfig(true, "freezetag");
     
+    TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, 0, 0, 0, "45 ; 1 ; 87 ; .5 ; 107 ; 1.3", 50, _, true);
+    //TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, 2, 0, 0, "26 ; 6100 ; 57 ; -6", _, _, true);
     LoadSoundConfig();
     
     if (GetConVarBool(enabled_cvar))
@@ -185,21 +191,27 @@ LoadSoundConfig()
     KvGotoFirstSubKey(kvTree);
     do 
     {
-      KvGetString(kvTree, "file", line, sizeof(line), "");
-      KvGetString(kvTree, "type", type, sizeof(type), "");
-      if (StrEqual(type, "FreezeSound", false))
-          section = SND_FREEZE;
-      else if (StrEqual(type, "UnfreezeSound", false))
-          section = SND_UNFREEZE;
-      else if (StrEqual(type, "WinSound", false))
-          section = SND_WIN;
-      else if (StrEqual(type, "LossSound", false))
-          section = SND_LOSS;
-      full_path = "sound\\";
-      StrCat(full_path, sizeof(full_path), line);
-      if (FileExists(full_path))
+        KvGetString(kvTree, "file", line, sizeof(line), "");
+        KvGetString(kvTree, "type", type, sizeof(type), "");
+        if (StrEqual(type, "FreezeSound", false))
+            section = SND_FREEZE;
+        else if (StrEqual(type, "UnfreezeSound", false))
+            section = SND_UNFREEZE;
+        else if (StrEqual(type, "WinSound", false))
+            section = SND_WIN;
+        else if (StrEqual(type, "LossSound", false))
+            section = SND_LOSS;
+        else if (StrEqual(type, "MinigunReloadFinishedSound", false))
+            section = SND_MINIGUN_RELOAD_FINISHED;
+        else if (StrEqual(type, "FlamethrowerReloadFinishedSound", false))
+            section = SND_FLAMETHROWER_RELOAD_FINISHED;
+        else if (StrEqual(type, "AirblastCooldownSound", false))
+            section = SND_AIRBLAST_COOLDOWN;
+        full_path = "sound\\";
+        StrCat(full_path, sizeof(full_path), line);
+        if (FileExists(full_path))
         PushArrayString(sounds[section], line);
-      else
+        else
         LogError("%T", "FileNoExist", LANG_SERVER, full_path);
     } while (KvGotoNextKey(kvTree));
   
@@ -250,7 +262,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
             ChangeClientTeam(i, TEAM_RED);
             players[num_players] = i;
             num_players++;
-            SetEntProp(i, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
+            SetEntProp(i, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
         }
         StopBeacon(i);
     }
@@ -515,7 +527,7 @@ public PreThinkPost(client)
     {
     case TFClass_Scout:
     {
-        SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 342.0);
+        SetEntPropFloat(client, Prop_Data, "m_flMaxspeed", 320.0);
     }
     case TFClass_DemoMan:
     {
@@ -605,16 +617,25 @@ public PreThinkPost(client)
  */
 public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:angles[3], &weapon)
 {
+    decl String:sound_path[PLATFORM_MAX_PATH];
+    
     if (enabled)
     {
-        if (airblast_cooldown[client] && TF2_GetPlayerClass(client) == TFClass_Pyro)
+        if (buttons & IN_ATTACK2 == IN_ATTACK2 && airblast_cooldown[client] && TF2_GetPlayerClass(client) == TFClass_Pyro)
         {
+            if (sound_busy_timer[client] == INVALID_HANDLE)
+            {
+                GetArrayString(sounds[SND_AIRBLAST_COOLDOWN], GetRandomInt(0, GetArraySize(sounds[SND_AIRBLAST_COOLDOWN]) - 1), sound_path, sizeof(sound_path));
+                EmitSoundToClient(client, sound_path, _, _, SNDLEVEL_DEFAULT);
+                sound_busy_timer[client] = CreateTimer(2.0, ResetSound, client);
+            }
             buttons &= ~IN_ATTACK2;
         }
         else if (buttons & IN_ATTACK2 == IN_ATTACK2 && TF2_GetPlayerClass(client) == TFClass_Pyro)
         {
             airblast_cooldown[client] = true;
             airblast_timer[client] = CreateTimer(airblast_cooldown_time, ResetAirblast, client);
+            sound_busy_timer[client] = CreateTimer(1.0, ResetSound, client);
         }
         
         return Plugin_Changed;
@@ -639,6 +660,17 @@ public Action:ResetAirblast(Handle:timer, any:client)
 }
 
 /**
+ * Timer to prevent a sound from playing too often.
+ * 
+ * @param timer A handle to the timer that triggered this callback.
+ * @param client Index of the client.
+ */
+public Action:ResetSound(Handle:timer, any:client)
+{
+    sound_busy_timer[client] = INVALID_HANDLE;
+}
+
+/**
  * Timer callback to reload a player's minigun.
  * 
  * @param timer A handle to the timer that triggered this callback.
@@ -646,9 +678,13 @@ public Action:ResetAirblast(Handle:timer, any:client)
  */
 public Action:ReloadMinigun(Handle:timer, any:client)
 {
+    decl String:sound_path[PLATFORM_MAX_PATH];
+    
     if (IsClientInGame(client) && !IsClientObserver(client))
     {
         PrintToChat(client, "%t", "MinigunReloaded");
+        GetArrayString(sounds[SND_MINIGUN_RELOAD_FINISHED], GetRandomInt(0, GetArraySize(sounds[SND_MINIGUN_RELOAD_FINISHED]) - 1), sound_path, sizeof(sound_path));
+        EmitSoundToClient(client, sound_path, _, _, SNDLEVEL_DEFAULT);
         SetEntData(client, ammo_offset + 4, minigun_ammo, 4);  
     }
     reload_timer[client] = INVALID_HANDLE;
@@ -662,9 +698,13 @@ public Action:ReloadMinigun(Handle:timer, any:client)
  */
 public Action:ReloadFlamethrower(Handle:timer, any:client)
 {
+    decl String:sound_path[PLATFORM_MAX_PATH];
+    
     if (IsClientInGame(client) && !IsClientObserver(client))
     {
         PrintToChat(client, "%t", "FlamethrowerReloaded");
+        GetArrayString(sounds[SND_FLAMETHROWER_RELOAD_FINISHED], GetRandomInt(0, GetArraySize(sounds[SND_FLAMETHROWER_RELOAD_FINISHED]) - 1), sound_path, sizeof(sound_path));
+        EmitSoundToClient(client, sound_path, _, _, SNDLEVEL_DEFAULT);
         SetEntData(client, ammo_offset + 4, flamethrower_ammo, 4);    
     }
     reload_timer[client] = INVALID_HANDLE;
@@ -756,6 +796,7 @@ public OnClientDisconnect(client)
  */
 public Action:OnSpawn(client)
 {
+    SetEntProp(client, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
     if (!is_fluttershy[client] && GetClientTeam(client) != TEAM_RED)
     {
         ChangeClientTeam(client, TEAM_RED);
@@ -876,7 +917,7 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
             // Refill the life bar and display to the user the multiple of 1000 that his life is now counting down from
             if (displayed_health[victim] <= 0)
             {
-                PrintToChat(victim, "%t", "CurrentHealth", current_health[victim]);
+                PrintToChatAll("%t", "CurrentHealth", victim_name, current_health[victim]);
                 displayed_health[victim] = current_health[victim] - ((current_health[victim] / 1000) * 1000);
             }
             
@@ -998,7 +1039,6 @@ FreezePlayer(victim, attacker)
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
         TF2_RemoveCondition(victim, TFCond_Dazed); // Prevent bonk from blocking admin freeze
         TF2_StunPlayer(victim, freeze_duration, 0.0, TF_STUNFLAG_BONKSTUCK, attacker);
-        SetEntProp(victim, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
         stun_immunity[victim] = true;
         StartBeacon(victim);
         CheckWinCondition();
@@ -1029,7 +1069,6 @@ UnfreezePlayer(victim, attacker)
         stun_immunity[victim] = true;
         TF2_AddCondition(victim, TFCond_Ubercharged, freeze_immunity_time);
         CreateTimer(freeze_immunity_time, RemoveFreezeImmunity, GetClientUserId(victim));
-        SetEntProp(victim, Prop_Send, "m_CollisionGroup", 5); // Default collision for player
         StopBeacon(victim);
     }
 }
@@ -1256,7 +1295,7 @@ MakeFluttershy(client)
         if (displayed_health[client] <= 0) displayed_health[client] = 1000;
         current_health[client] = max_hp;
         SetEntityHealth(client, displayed_health[client]);
-        PrintToChat(client, "%t", "CurrentHealth", current_health[client]);
+        PrintToChatAll("%t", "CurrentHealth", name, current_health[client]);
         StartBeacon(client);
     }
 }
@@ -1593,7 +1632,7 @@ StartBeacon(client)
         else
         {
             beacon_radius[client] = 0.0;
-            beacon_timer[client] = CreateTimer(4.0, SpawnBeacon, client, TIMER_REPEAT);
+            beacon_timer[client] = CreateTimer(1.8, SpawnBeacon, client, TIMER_REPEAT);
         }
     }
 }
@@ -1695,7 +1734,7 @@ SetVanillaWeapons(client)
     }
     case TFClass_Heavy:
     {
-        TF2Items_GiveWeapon(client, 15);
+        TF2Items_GiveWeapon(client, -1000);
         TF2Items_GiveWeapon(client, 11);
         TF2Items_GiveWeapon(client, 5);
     }
@@ -1715,6 +1754,7 @@ SetVanillaWeapons(client)
     {
         TF2Items_GiveWeapon(client, 17);
         TF2Items_GiveWeapon(client, 15);
+        //TF2Items_GiveWeapon(client, -1001);
         TF2Items_GiveWeapon(client, 8);
     }
     }

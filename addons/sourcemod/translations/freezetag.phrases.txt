@@ -56,8 +56,8 @@
     
     "CurrentHealth"
     {
-        "#format"       "{1:d}"
-        "en"            "Current Health: {1}"
+        "#format"       "{1:s},{2:d}"
+        "en"            "{1}'s Health: {2}"
     }
     
     "PlayerFrozen"
