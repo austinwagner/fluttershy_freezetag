@@ -170,6 +170,10 @@ public OnPluginStart()
     TF2Items_CreateWeapon(-1003, "tf_weapon_pipebomblauncher", 20, 1, 0, 0, "126 ; -.42 ; 89 ; -5 ; 59 ; .5", 8, _, true);
     // Modified Scattergun - Movespeed (54): 80% (320 total)
     TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, 0, 0, 0, "54 ; .8", 6, _, true);
+    // Modified SMG - Fire Rate (6): 200%
+    TF2Items_CreateWeapon(-1005, "tf_weapon_smg", 16, 1, 0, 0, "6 ; .5", 6, _, true);
+    // Modified Rifle - Charge Rate (41): 300%
+    TF2Items_CreateWeapon(-1006, "tf_weapon_sniperrifle", 14, 0, 0, 0, "41 ; 3", 6, _, true);
     
     LoadSoundConfig();
     
@@ -1655,8 +1659,8 @@ SetVanillaWeapons(client)
     }
     case TFClass_Sniper:
     {
-        TF2Items_GiveWeapon(client, 14);
-        TF2Items_GiveWeapon(client, 16);
+        TF2Items_GiveWeapon(client, -1006);
+        TF2Items_GiveWeapon(client, -1005);
         TF2Items_GiveWeapon(client, 3);
     }
     case TFClass_Spy:
