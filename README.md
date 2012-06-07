@@ -10,6 +10,8 @@ Fluttershy's Freeze Tag requires:
 * [Metamod:Source 1.8 or higher](http://www.sourcemm.net/)
 * [SourceMod 1.4.2 or higher](http://www.sourcemod.net/downloads.php)
 * [SDKHooks 2.1 or higher](http://forums.alliedmods.net/showthread.php?t=106748)
+* [TF2Items 1.5.2 or higher](https://forums.alliedmods.net/showthread.php?t=115100)
+* [TF2Items Give Weapon 3.10 or higher](http://forums.alliedmods.net/showthread.php?t=141962)
 
 ## Installation
 First configure all of the dependenices in the order listed above according the their respective documentation.
@@ -23,7 +25,7 @@ Your server should automatically load the plugin when it starts. If the server i
 ## Configuration
 There are three configuration files for this mod.
 
-`cfg/freezetag_degrootkeep.cfg` is the configuration file that is run when the map is loaded. By default, this configuration enables Freeze Tag when the map starts.
+`cfg/freezetag_degrootkeep_v2.cfg` is the configuration file that is run when the map is loaded. By default, this configuration enables Freeze Tag when the map starts.
 
 `cfg/sourcemod/freezetag.cfg` contains all of the configurable paramters for Freeze Tag. Descriptions of what each cvar does is listed in the config file.
 
@@ -34,16 +36,10 @@ If the game is not already running, run `freezetag_enabled 1` in the server cons
 
 To administrate the game, there are four admin commands which can be run by anyone with generic admin rights.
 
-* `flutts <player name>` will cause a player to be moved to the Fluttershy team. If this player is the only player remaining on RED that was not frozen, the round will end.
-* `unflutts <player name>` will move a player from the Fluttershy team to RED. If this action causes no Fluttershys to remain, the round will end.
-* `freeze <player name>` will freeze a player in place as if they were hit by a Fluttershy. If this player was the last unfrozen player on RED, the round will end.
-* `unfreeze <player name>` will remove the freeze effect from a player.
- 
-Any of the commands can be run without specifying a player name. If a name is not specified, a menu listing all of the current players will be displayed.
-
-The commands will also match partial names as long as the partial name unambiguously identifies a player. If you need to enter a name with spaces, enclose the name in double quotes.
-
-`@me` is a special name parameter that will target yourself.
+* `ft_flutts <#userid|name>` will cause a player to be moved to the Fluttershy team. If this player is the only player remaining on RED that was not frozen, the round will end.
+* `ft_unflutts <#userid|name>` will move a player from the Fluttershy team to RED. If this action causes no Fluttershys to remain, the round will end.
+* `ft_freeze <#userid|name>` will freeze a player in place as if they were hit by a Fluttershy. If this player was the last unfrozen player on RED, the round will end.
+* `ft_unfreeze <#userid|name>` will remove the freeze effect from a player.
 
 ## Development
 
