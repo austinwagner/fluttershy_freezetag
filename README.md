@@ -23,7 +23,7 @@ This will copy the map, sounds, default configurations, plugin, and plugin sourc
 Your server should automatically load the plugin when it starts. If the server is already running, run `sm plugins load freezetag` in the server console.
 
 ## Configuration
-There are twp configuration files for this mod.
+There are two configuration files for this mod.
 
 `cfg/sourcemod/freezetag.cfg` contains all of the configurable paramters for Freeze Tag. Descriptions of what each cvar does is listed in the config file.
 
