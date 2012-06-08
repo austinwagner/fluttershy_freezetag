@@ -5,8 +5,9 @@
 #include <tf2_stocks>
 #include <sdkhooks>
 #include <tf2items_giveweapon>
+#include <regex>
 
-#define PLUGIN_VERSION "0.3.0"
+#define PLUGIN_VERSION "0.3.1"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -61,6 +62,7 @@ new Handle:flamethrower_ammo_cvar;
 new Handle:airblast_cooldown_time_cvar;
 new Handle:round_time_cvar;
 new Handle:fluttershy_ratio_cvar;
+new Handle:map_name_regex_cvar;
 
 new max_hp;
 new Float:freeze_duration;
@@ -73,6 +75,7 @@ new flamethrower_ammo;
 new Float:airblast_cooldown_time;
 new round_time;
 new Float:fluttershy_ratio;
+new Handle:map_name_regex;
 
 new bool:is_fluttershy[MAX_CLIENT_IDS];
 new displayed_health[MAX_CLIENT_IDS];
@@ -102,13 +105,15 @@ new halo_model;
  */
 public OnPluginStart()
 {    
+    decl String:cvar_string[512];
+    
     LoadTranslations("freezetag.phrases");
     
     // Create Console Variables
     max_hp_cvar = CreateConVar("freezetag_max_hp", "6250", "The amount of life Fluttershys start with.", CVAR_FLAGS);
     freeze_duration_cvar = CreateConVar("freezetag_freeze_time", "300.0", "The amount of time in seconds a player will remain frozen for before automatically unfreezing.", CVAR_FLAGS);
     freeze_immunity_cvar = CreateConVar("freezetag_immunity_time", "2.0", "The amount of time in seconds during which a player cannot be unfrozen or refrozen.", CVAR_FLAGS);
-    enabled_cvar = CreateConVar("freezetag_enabled", "0", "0 to disable, 1 to enable.", CVAR_FLAGS);
+    enabled_cvar = CreateConVar("freezetag_enabled", "0", "0 to disable, 1 to enable.", CVAR_FLAGS | FCVAR_DONTRECORD);
     minigun_reload_time_cvar = CreateConVar("freezetag_minigun_reload", "5.0", "The amount of time in seconds it takes to reload a player's Minigun.", CVAR_FLAGS);
     flamethrower_reload_time_cvar = CreateConVar("freezetag_flamethrower_reload", "5.0", "The amount of time in seconds it takes to reload a player's Flamethrower.", CVAR_FLAGS);
     minigun_ammo_cvar = CreateConVar("freezetag_minigun_ammo", "50", "The maximum number of bullets a Minigun can hold.", CVAR_FLAGS);
@@ -116,6 +121,7 @@ public OnPluginStart()
     airblast_cooldown_time_cvar = CreateConVar("freezetag_airblast_cooldown", "3.0", "The amount of time in seconds before a Pyro can airblast again.", CVAR_FLAGS);
     round_time_cvar = CreateConVar("freezetag_round_time", "300", "The amount of time in seconds that a round will last.", CVAR_FLAGS);
     fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "6", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
+    map_name_regex_cvar = CreateConVar("freezetag_maps", "freezetag_", "The maps to automatically enable this plugin on, written as a PCRE. If any text in the map name matches the RegEx, the plugin will be enabled.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
@@ -141,6 +147,8 @@ public OnPluginStart()
     airblast_cooldown_time = GetConVarFloat(airblast_cooldown_time_cvar);
     round_time = GetConVarInt(round_time_cvar);
     fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
+    GetConVarString(map_name_regex_cvar, cvar_string, sizeof(cvar_string)); 
+    map_name_regex = CompileRegex(cvar_string);
     enabled = false;
     
     // Get the default TF2 convars that will need to be changed
@@ -355,6 +363,10 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
         round_time = GetConVarInt(convar);
     else if (convar == fluttershy_ratio_cvar)
         fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(convar)));
+    else if (convar == map_name_regex_cvar)
+    {
+        map_name_regex = CompileRegex(newValue);
+    }
     else if (convar == enabled_cvar)
     {
         if (GetConVarBool(convar))
@@ -504,6 +516,12 @@ public OnMapStart()
     
     ring_model = PrecacheModel("materials/sprites/laser.vmt");
     halo_model = PrecacheModel("materials/sprites/halo01.vmt");
+    
+    GetCurrentMap(path, sizeof(path));
+    if (MatchRegex(map_name_regex, path) > 0)
+        SetConVarBool(enabled_cvar, true);
+    else
+        SetConVarBool(enabled_cvar, false);
 }
 
 /**
