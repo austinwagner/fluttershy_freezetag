@@ -6,7 +6,7 @@
 #include <sdkhooks>
 #include <tf2items_giveweapon>
 
-#define PLUGIN_VERSION "0.3.0"
+#define PLUGIN_VERSION "0.3.1"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -42,14 +42,17 @@ public Plugin:myinfo =
 
 new Handle:sounds[7];
 
+/****** Saving original values ******/
 new original_ff_val;
 new original_scramble_teams_val;
 new original_teams_unbalance_val;
 
+/****** Game settings ******/
 new Handle:ff_cvar;
 new Handle:scramble_teams_cvar;
 new Handle:teams_unbalance_cvar;
 
+/****** FSFT settings ******/
 new Handle:max_hp_cvar;
 new Handle:freeze_duration_cvar;
 new Handle:freeze_immunity_cvar;
@@ -62,6 +65,7 @@ new Handle:airblast_cooldown_time_cvar;
 new Handle:round_time_cvar;
 new Handle:fluttershy_ratio_cvar;
 
+/****** Local settings ******/
 new max_hp;
 new Float:freeze_duration;
 new Float:freeze_immunity_time;
@@ -74,6 +78,7 @@ new Float:airblast_cooldown_time;
 new round_time;
 new Float:fluttershy_ratio;
 
+/****** Tracking player conditions ******/
 new bool:is_fluttershy[MAX_CLIENT_IDS];
 new displayed_health[MAX_CLIENT_IDS];
 new current_health[MAX_CLIENT_IDS];
@@ -87,6 +92,7 @@ new Handle:beacon_timer[MAX_CLIENT_IDS];
 new Float:beacon_radius[MAX_CLIENT_IDS];
 new Handle:sound_busy_timer[MAX_CLIENT_IDS];
 
+/****** Misc ******/
 new killer[16];
 new num_killers;
 new num_dc_while_stunned;
@@ -95,6 +101,7 @@ new master_cp = -1;
 new bool:win_conditions_checked;
 new ring_model;
 new halo_model;
+new bool:auto_started = false; /* Plugin started from name match, don't restart round */
 
 
 /**
@@ -414,7 +421,8 @@ EnablePlugin()
     HookEvent("teamplay_round_stalemate", RoundEnd);
     HookEvent("post_inventory_application", PostInventoryApplication);
     
-    ServerCommand("mp_restartgame_immediate 1");
+    if(auto_started == false)
+      ServerCommand("mp_restartgame_immediate 1");
 }
 
 /**
@@ -428,6 +436,7 @@ DisablePlugin(bool:unloading = false)
         return;
     
     enabled = false;
+    auto_started = false;
     
     // Restore convars to original state
     SetConVarInt(ff_cvar, original_ff_val);
@@ -504,6 +513,17 @@ public OnMapStart()
     
     ring_model = PrecacheModel("materials/sprites/laser.vmt");
     halo_model = PrecacheModel("materials/sprites/halo01.vmt");
+    
+    /* Check to see if the map is a freezetag map */
+    decl String:curMap[85];
+    GetCurrentMap(curMap, sizeof(curMap));
+    if(strncmp("freezetag_", curMap, 11, false)==0)
+    {
+      auto_started = true;
+      EnablePlugin();
+    }
+    else
+      DisablePlugin();
 }
 
 /**
