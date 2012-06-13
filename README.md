@@ -27,7 +27,7 @@ There are two configuration files for this mod.
 
 `cfg/sourcemod/freezetag.cfg` contains all of the configurable paramters for Freeze Tag. Descriptions of what each cvar does is listed in the config file.
 
-`cfg/sourcemod/freezetagsounds.cfg` lists the sounds that the game should play for different events. They are chosen randomly to play from the list. To add a sound to the list, enter its path relative to `tf/sounds/`. These sounds are loaded when the plugin is loaded. If you change this file, you must reload the plugin by entering `sm plugins freezetag reload` into the console.
+`cfg/sourcemod/freezetagsounds.cfg` lists the sounds that the game should play for different events. They are chosen randomly to play from the list. To add a sound to the list, enter its path relative to `tf/sounds/`. These sounds are loaded when the plugin is loaded. If you change this file, you must reload the plugin by entering `sm plugins reload freezetag` into the console.
 
 ## Running the Game
 If the game is not already running, run `freezetag_enabled 1` in the server console. This will cause the game mode to load and the round to restart. The game mode will remain active until something causes `freezetag_enabled` to become 0.
