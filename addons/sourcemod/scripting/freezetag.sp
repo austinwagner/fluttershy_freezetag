@@ -4,8 +4,9 @@
 #include <sourcemod>
 #include <tf2_stocks>
 #include <sdkhooks>
-#include <tf2items_giveweapon>
 #include <regex>
+#undef REQUIRE_PLUGIN
+#include <tf2items_giveweapon>
 
 #define PLUGIN_VERSION "0.3.1"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
