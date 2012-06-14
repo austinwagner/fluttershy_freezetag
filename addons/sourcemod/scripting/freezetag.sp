@@ -1469,7 +1469,6 @@ public Action:JoinClassCommand(client, const String:command[], argc)
                 reload_timer[client] = INVALID_HANDLE;
             }
             TF2_SetPlayerClass(client, class_enum);
-            TF2_RespawnPlayer(client);
             RegenVanilla(client);
         }
         return Plugin_Handled;
