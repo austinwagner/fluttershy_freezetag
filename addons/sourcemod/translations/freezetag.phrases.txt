@@ -119,4 +119,10 @@
     {
         "en"            "Winners: "
     }
+    
+    "TooSoonClassError"
+    {
+        "#format"       "{1:d}"
+        "en"            "You cannot change classes for another {1} seconds."
+    }
 }
