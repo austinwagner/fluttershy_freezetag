@@ -85,6 +85,7 @@ new round_time;
 new Float:fluttershy_ratio;
 new Handle:map_name_regex;
 new Float:class_change_time_limit;
+new Float:round_start_time;
 
 /****** Tracking player conditions ******/
 new bool:is_fluttershy[MAX_CLIENT_IDS];
@@ -124,13 +125,13 @@ public OnPluginStart()
     LoadTranslations("freezetag.phrases");
     
     // Create Console Variables
-    max_hp_cvar = CreateConVar("freezetag_max_hp", "6250", "The amount of life Fluttershys start with.", CVAR_FLAGS);
+    max_hp_cvar = CreateConVar("freezetag_max_hp", "6750", "The amount of life Fluttershys start with.", CVAR_FLAGS);
     freeze_duration_cvar = CreateConVar("freezetag_freeze_time", "300.0", "The amount of time in seconds a player will remain frozen for before automatically unfreezing.", CVAR_FLAGS);
-    freeze_immunity_cvar = CreateConVar("freezetag_immunity_time", "2.0", "The amount of time in seconds during which a player cannot be unfrozen or refrozen.", CVAR_FLAGS);
+    freeze_immunity_cvar = CreateConVar("freezetag_immunity_time", "2.5", "The amount of time in seconds during which a player cannot be unfrozen or refrozen.", CVAR_FLAGS);
     enabled_cvar = CreateConVar("freezetag_enabled", "0", "0 to disable, 1 to enable.", CVAR_FLAGS | FCVAR_DONTRECORD);
     minigun_reload_time_cvar = CreateConVar("freezetag_minigun_reload", "5.0", "The amount of time in seconds it takes to reload a player's Minigun.", CVAR_FLAGS);
     flamethrower_reload_time_cvar = CreateConVar("freezetag_flamethrower_reload", "5.0", "The amount of time in seconds it takes to reload a player's Flamethrower.", CVAR_FLAGS);
-    minigun_ammo_cvar = CreateConVar("freezetag_minigun_ammo", "50", "The maximum number of bullets a Minigun can hold.", CVAR_FLAGS);
+    minigun_ammo_cvar = CreateConVar("freezetag_minigun_ammo", "75", "The maximum number of bullets a Minigun can hold.", CVAR_FLAGS);
     flamethrower_ammo_cvar = CreateConVar("freezetag_flamethrower_ammo", "100", "The maximum amount of ammo a Flamethrower can hold.", CVAR_FLAGS);
     airblast_cooldown_time_cvar = CreateConVar("freezetag_airblast_cooldown", "3.0", "The amount of time in seconds before a Pyro can airblast again.", CVAR_FLAGS);
     round_time_cvar = CreateConVar("freezetag_round_time", "300", "The amount of time in seconds that a round will last.", CVAR_FLAGS);
@@ -351,6 +352,8 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     AcceptEntityInput(team_round_timer, "SetMaxTime");
     SetVariantInt(round_time);
     AcceptEntityInput(team_round_timer, "SetTime");
+    
+    round_start_time = GetGameTime();
 }
 
 /**
@@ -1452,7 +1455,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     decl String:class[10];
     
     GetCmdArg(1, class, sizeof(class));
-    
+    PrintToChatAll("%f, %f", last_class_change[client], GetGameTime());
     if (is_fluttershy[client])
     {
         PrintToChat(client, "%t", "FluttershyClassError");
@@ -1463,9 +1466,9 @@ public Action:JoinClassCommand(client, const String:command[], argc)
         PrintToChat(client, "%t", "FrozenClassError");
         return Plugin_Handled;
     }
-    else if (GetGameTime() * tick_interval > FREE_CLASS_CHANGE_TIME && last_class_change[client] + class_change_time_limit > GetGameTime() * tick_interval)
+    else if (GetGameTime() - round_start_time > FREE_CLASS_CHANGE_TIME && last_class_change[client] + class_change_time_limit > GetGameTime())
     {
-        PrintToChat(client, "%t", "TooSoonClassError", RoundToNearest(last_class_change[client] + class_change_time_limit - (GetGameTime() * tick_interval)));
+        PrintToChat(client, "%t", "TooSoonClassError", RoundToNearest(last_class_change[client] + class_change_time_limit - GetGameTime()));
         return Plugin_Handled;
     }
     else if (!IsRedClassAllowed(class))
@@ -1486,7 +1489,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
             }
             TF2_SetPlayerClass(client, class_enum);
             RegenVanilla(client);
-            last_class_change[client] = GetGameTime() * tick_interval;
+            last_class_change[client] = GetGameTime();
         }
         return Plugin_Handled;
     }
