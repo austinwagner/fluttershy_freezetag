@@ -8,7 +8,7 @@
 #undef REQUIRE_PLUGIN
 #include <tf2items_giveweapon>
 
-#define PLUGIN_VERSION "0.3.1"
+#define PLUGIN_VERSION "0.3.2"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -30,8 +30,10 @@
 
 #define PREVENT_DEATH_HP 3000
 #define SHAME_STUN_DURATION 5000.0
-#define SLOT_MELEE 2
 #define SLOT_PRIMARY 0
+#define SLOT_SECONDARY 1
+#define SLOT_MELEE 2
+#define FREE_CLASS_CHANGE_TIME 10.0
 
 public Plugin:myinfo =
 {
@@ -67,6 +69,7 @@ new Handle:airblast_cooldown_time_cvar;
 new Handle:round_time_cvar;
 new Handle:fluttershy_ratio_cvar;
 new Handle:map_name_regex_cvar;
+new Handle:class_change_time_limit_cvar;
 
 /****** Local settings ******/
 new max_hp;
@@ -81,6 +84,7 @@ new Float:airblast_cooldown_time;
 new round_time;
 new Float:fluttershy_ratio;
 new Handle:map_name_regex;
+new Float:class_change_time_limit;
 
 /****** Tracking player conditions ******/
 new bool:is_fluttershy[MAX_CLIENT_IDS];
@@ -95,6 +99,7 @@ new Handle:reload_timer[MAX_CLIENT_IDS];
 new Handle:beacon_timer[MAX_CLIENT_IDS];
 new Float:beacon_radius[MAX_CLIENT_IDS];
 new Handle:sound_busy_timer[MAX_CLIENT_IDS];
+new Float:last_class_change[MAX_CLIENT_IDS];
 
 /****** Misc ******/
 new killer[16];
@@ -105,6 +110,7 @@ new master_cp = -1;
 new bool:win_conditions_checked;
 new ring_model;
 new halo_model;
+new Float:tick_interval;
 
 
 
@@ -130,6 +136,7 @@ public OnPluginStart()
     round_time_cvar = CreateConVar("freezetag_round_time", "300", "The amount of time in seconds that a round will last.", CVAR_FLAGS);
     fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "6", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
     map_name_regex_cvar = CreateConVar("freezetag_maps", "freezetag_", "The maps to automatically enable this plugin on, written as a PCRE. If any text in the map name matches the RegEx, the plugin will be enabled.", CVAR_FLAGS);
+    class_change_time_limit_cvar = CreateConVar("freezetag_class_change_time_limit", "15.0", "How long in seconds a player must wait before changing classes again.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
@@ -143,6 +150,7 @@ public OnPluginStart()
     HookConVarChange(airblast_cooldown_time_cvar, ConVarChanged);
     HookConVarChange(round_time_cvar, ConVarChanged);
     HookConVarChange(fluttershy_ratio_cvar, ConVarChanged);
+    HookConVarChange(class_change_time_limit_cvar, ConVarChanged);
     
     // Get the current values for all of the console variables
     max_hp = GetConVarInt(max_hp_cvar);
@@ -157,6 +165,7 @@ public OnPluginStart()
     fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(fluttershy_ratio_cvar)));
     GetConVarString(map_name_regex_cvar, cvar_string, sizeof(cvar_string)); 
     map_name_regex = CompileRegex(cvar_string);
+    class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
     enabled = false;
     
     // Get the default TF2 convars that will need to be changed
@@ -173,23 +182,24 @@ public OnPluginStart()
     RegAdminCmd("ft_disable", DisableCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
+    tick_interval = GetTickInterval();
     
     AutoExecConfig(true, "freezetag");
     
     // Modified Minigun - Spread (106): 80%, Spinup Time (87): 50%, Deployed Movespeed (75): 209% (230 total)
-    TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, 0, 0, 0, "106 ; .8 ; 87 ; .5 ; 75 ; 2.09", 50, _, true);
+    TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, SLOT_PRIMARY, 0, 0, "106 ; .8 ; 87 ; .5 ; 75 ; 2.09", 50, _, true);
     // Modified Bonesaw - +Health (26): 850 (1000 total), Health regen (57): -6 (0 total)
-    TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, 2, 0, 0, "26 ; 850 ; 57 ; -6", _, _, true);
+    TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, SLOT_MELEE, 0, 0, "26 ; 850 ; 57 ; -6", _, _, true);
     // Modified Grenade Launcher - Projectile Speed (103): 110%
-    TF2Items_CreateWeapon(-1002, "tf_weapon_grenadelauncher", 19, 0, 0, 0, "103 ; 1.1", 4, _, true);
+    TF2Items_CreateWeapon(-1002, "tf_weapon_grenadelauncher", 19, SLOT_MELEE, 0, 0, "103 ; 1.1", 4, _, true);
     // Modified Sicky Launcher - +Arm Time (126): -.42 (.5 total), +Max Stickies Deployed (89): -5 (3 total), Self Pushback (59): 50%
-    TF2Items_CreateWeapon(-1003, "tf_weapon_pipebomblauncher", 20, 1, 0, 0, "126 ; -.42 ; 89 ; -5 ; 59 ; .5", 8, _, true);
+    TF2Items_CreateWeapon(-1003, "tf_weapon_pipebomblauncher", 20, SLOT_SECONDARY, 0, 0, "126 ; -.42 ; 89 ; -5 ; 59 ; .5", 8, _, true);
     // Modified Scattergun - Movespeed (54): 80% (320 total)
-    TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, 0, 0, 0, "54 ; .8", 6, _, true);
+    TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, SLOT_PRIMARY, 0, 0, "54 ; .8", 6, _, true);
     // Modified SMG - Fire Rate (6): 200%
-    TF2Items_CreateWeapon(-1005, "tf_weapon_smg", 16, 1, 0, 0, "6 ; .5", 6, _, true);
+    TF2Items_CreateWeapon(-1005, "tf_weapon_smg", 16, SLOT_SECONDARY, 0, 0, "6 ; .5", 6, _, true);
     // Modified Rifle - Charge Rate (41): 300%
-    TF2Items_CreateWeapon(-1006, "tf_weapon_sniperrifle", 14, 0, 0, 0, "41 ; 3", 6, _, true);
+    TF2Items_CreateWeapon(-1006, "tf_weapon_sniperrifle", 14, SLOT_PRIMARY, 0, 0, "41 ; 3", 6, _, true);
     
     LoadSoundConfig();
     
@@ -285,6 +295,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
         is_fluttershy[i] = false;
         bypass_immunity[i] = false;
         stun_immunity[i] = false;
+        last_class_change[i] = -1000.0;
         
         if (IsClientInGame(i) && !IsClientObserver(i))
         {
@@ -372,9 +383,9 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
     else if (convar == fluttershy_ratio_cvar)
         fluttershy_ratio = FloatDiv(1.0, float(GetConVarInt(convar)));
     else if (convar == map_name_regex_cvar)
-    {
         map_name_regex = CompileRegex(newValue);
-    }
+    else if (convar == class_change_time_limit_cvar)
+        class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
     else if (convar == enabled_cvar)
     {
         if (GetConVarBool(convar))
@@ -1452,6 +1463,11 @@ public Action:JoinClassCommand(client, const String:command[], argc)
         PrintToChat(client, "%t", "FrozenClassError");
         return Plugin_Handled;
     }
+    else if (GetGameTime() * tick_interval > FREE_CLASS_CHANGE_TIME && last_class_change[client] + class_change_time_limit > GetGameTime() * tick_interval)
+    {
+        PrintToChat(client, "%t", "TooSoonClassError", RoundToNearest(last_class_change[client] + class_change_time_limit - (GetGameTime() * tick_interval)));
+        return Plugin_Handled;
+    }
     else if (!IsRedClassAllowed(class))
     {
         ShowVGUIPanel(client, "class_red");
@@ -1470,6 +1486,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
             }
             TF2_SetPlayerClass(client, class_enum);
             RegenVanilla(client);
+            last_class_change[client] = GetGameTime() * tick_interval;
         }
         return Plugin_Handled;
     }
