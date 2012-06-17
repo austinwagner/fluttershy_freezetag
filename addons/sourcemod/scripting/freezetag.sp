@@ -34,6 +34,7 @@
 #define SLOT_SECONDARY 1
 #define SLOT_MELEE 2
 #define FREE_CLASS_CHANGE_TIME 10.0
+#define DEFAULT_CLASS TFClass_Soldier
 
 public Plugin:myinfo =
 {
@@ -545,8 +546,11 @@ public OnMapStart()
     GetCurrentMap(path, sizeof(path));
     if (MatchRegex(map_name_regex, path) > 0)
         SetConVarBool(enabled_cvar, true);
-    else
-        SetConVarBool(enabled_cvar, false);
+}
+
+public OnMapEnd()
+{
+	SetConVarBool(enabled_cvar, false);
 }
 
 /**
@@ -824,7 +828,7 @@ public Action:OnSpawn(client)
         // If the player spawns as an invalid class, force them to change
         // Automatically sets them to soldier so they can't just cancel the forced
         // class change.
-        TF2_SetPlayerClass(client, TFClass_Soldier);
+        TF2_SetPlayerClass(client, DEFAULT_CLASS);
         TF2_RespawnPlayer(client);
         ShowVGUIPanel(client, "class_red"); 
     }
@@ -1311,7 +1315,7 @@ ClearFluttershy(client, attacker)
         bypass_immunity[client] = true;
         KillPlayer(client, attacker);
         ChangeClientTeam(client, TEAM_BLU);
-        TF2_SetPlayerClass(client, TFClass_Soldier);
+        TF2_SetPlayerClass(client, DEFAULT_CLASS);
         TF2_RespawnPlayer(client);
         RegenVanilla(client);
         StopBeacon(client);
@@ -1455,7 +1459,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     decl String:class[10];
     
     GetCmdArg(1, class, sizeof(class));
-    PrintToChatAll("%f, %f", last_class_change[client], GetGameTime());
+	
     if (is_fluttershy[client])
     {
         PrintToChat(client, "%t", "FluttershyClassError");
@@ -1489,6 +1493,8 @@ public Action:JoinClassCommand(client, const String:command[], argc)
             }
             TF2_SetPlayerClass(client, class_enum);
             RegenVanilla(client);
+			if (!IsPlayerAlive(client))
+				RespawnPlayer(client);
             last_class_change[client] = GetGameTime();
         }
         return Plugin_Handled;
@@ -1529,7 +1535,7 @@ bool:IsRedClassAllowed(const String:class[])
  */
 bool:IsRedClassAllowedByEnum(TFClassType:class)
 {
-    return !(class == TFClass_Medic || class == TFClass_Engineer || class == TFClass_Spy);
+    return !(class == TFClass_Medic || class == TFClass_Engineer || class == TFClass_Spy || class == TFClass_Unknown);
 }
 
 /**
