@@ -197,12 +197,14 @@ public OnPluginStart()
     TF2Items_CreateWeapon(-1002, "tf_weapon_grenadelauncher", 19, SLOT_MELEE, 0, 0, "103 ; 1.1", 4, _, true);
     // Modified Sicky Launcher - +Arm Time (126): -.42 (.5 total), +Max Stickies Deployed (89): -5 (3 total), Self Pushback (59): 50%
     TF2Items_CreateWeapon(-1003, "tf_weapon_pipebomblauncher", 20, SLOT_SECONDARY, 0, 0, "126 ; -.42 ; 89 ; -5 ; 59 ; .5", 8, _, true);
-    // Modified Scattergun - Movespeed (54): 80% (320 total)
-    TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, SLOT_PRIMARY, 0, 0, "54 ; .8", 6, _, true);
+    // Modified Scattergun - Movespeed (54): 80% (320 total), Bullets per Shot (45): 50% (5 total)
+    TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, SLOT_PRIMARY, 0, 0, "54 ; .8 ; 45 ; .5", 6, _, true);
     // Modified SMG - Fire Rate (6): 200%
     TF2Items_CreateWeapon(-1005, "tf_weapon_smg", 16, SLOT_SECONDARY, 0, 0, "6 ; .5", 6, _, true);
     // Modified Rifle - Charge Rate (41): 300%
     TF2Items_CreateWeapon(-1006, "tf_weapon_sniperrifle", 14, SLOT_PRIMARY, 0, 0, "41 ; 3", 6, _, true);
+	// Modified Pistol - Damage (1): 70%
+	TF2Items_CreateWeapon(-1007, "tf_weapon_pistol", 23, SLOT_SECONDARY, 0, 0, "1 ; .7", 12, _, true);
     
     LoadSoundConfig();
     
@@ -1745,7 +1747,7 @@ SetVanillaWeapons(client)
     case TFClass_Scout:
     {
         TF2Items_GiveWeapon(client, -1004);
-        TF2Items_GiveWeapon(client, 23);
+        TF2Items_GiveWeapon(client, -1007);
         TF2Items_GiveWeapon(client, 0);
     }
     case TFClass_DemoMan:
