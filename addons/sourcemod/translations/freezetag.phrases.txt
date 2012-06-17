@@ -30,7 +30,8 @@
     
     "MinigunReloading"
     {
-        "en"            "Minigun reloading..."
+		"#format"		"{1:d}"
+        "en"            "Minigun reloading for {1} seconds."
     }
     
     "MinigunReloaded"
@@ -40,7 +41,8 @@
     
     "FlamethrowerReloading"
     {
-        "en"            "Flamethrower reloading..."
+		"#format"		"{1:d}"
+        "en"            "Flamethrower reloading for {1} seconds."
     }
     
     "FlamethrowerReloaded"
@@ -124,5 +126,11 @@
     {
         "#format"       "{1:d}"
         "en"            "You cannot change classes for another {1} seconds."
+    }
+	
+	"PlayerForgiven"
+    {
+		"#format"		"{1:s}"
+        "en"            "The Guardians have forgiven {1}"
     }
 }

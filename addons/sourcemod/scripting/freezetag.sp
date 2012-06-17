@@ -39,7 +39,7 @@
 public Plugin:myinfo =
 {
 	name = "Fluttershy's Freeze Tag",
-	author = "Ambit (idea by RogueDarkJedi)",
+	author = "Ambit, RogueDarkJedi",
 	description = "Defeat the Fluttershys before they freeze everyone.",
 	version = PLUGIN_VERSION,
 	url = ""
@@ -182,6 +182,7 @@ public OnPluginStart()
     RegAdminCmd("ft_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
     RegAdminCmd("ft_enable", EnableCommand, ADMFLAG_GENERIC);
     RegAdminCmd("ft_disable", DisableCommand, ADMFLAG_GENERIC);
+	RegAdminCmd("ft_forgive", ForgiveCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     tick_interval = GetTickInterval();
@@ -590,7 +591,7 @@ public PreThinkPost(client)
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY))
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            PrintToChat(client, "%t", "MinigunReloading");
+            PrintToChat(client, "%t", "MinigunReloading", minigun_reload_time);
             SetEntData(client, ammo_offset + 4, 0, 4);
             reload_timer[client] = CreateTimer(minigun_reload_time, ReloadMinigun, client);
         }
@@ -605,7 +606,7 @@ public PreThinkPost(client)
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY)) 
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            PrintToChat(client, "%t", "FlamethrowerReloading");
+            PrintToChat(client, "%t", "FlamethrowerReloading", flamethrower_reload_time);
             SetEntData(client, ammo_offset + 4, 0, 4);
             reload_timer[client] = CreateTimer(flamethrower_reload_time, ReloadFlamethrower, client);
         }
@@ -1138,7 +1139,7 @@ public Action:UnfreezePlayerCommand(client, args)
        
 	if (args < 1)
 	{
-		PrintToConsole(client, "Usage: ft_unfreeze <#userid|name>");
+		ReplyToCommand(client, "Usage: ft_unfreeze <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1175,7 +1176,7 @@ public Action:FreezePlayerCommand(client, args)
        
 	if (args < 1)
 	{
-		PrintToConsole(client, "Usage: ft_freeze <#userid|name>");
+		ReplyToCommand(client, "Usage: ft_freeze <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1212,7 +1213,7 @@ public Action:MakeFluttershyCommand(client, args)
        
 	if (args < 1)
 	{
-		PrintToConsole(client, "Usage: ft_flutts <#userid|name>");
+		ReplyToCommand(client, "Usage: ft_flutts <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1249,7 +1250,7 @@ public Action:ClearFluttershyCommand(client, args)
        
 	if (args < 1)
 	{
-		PrintToConsole(client, "Usage: ft_unflutts <#userid|name>");
+		ReplyToCommand(client, "Usage: ft_unflutts <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1267,6 +1268,54 @@ public Action:ClearFluttershyCommand(client, args)
             GetCustomClientName(targets[i], name, sizeof(name));
             PrintToChatAll("%t", "ClearFluttershy", name);
             ClearFluttershy(targets[i], 0);
+        }
+    }
+ 
+	return Plugin_Handled;
+}
+
+/**
+ * Command handler for letting a player who disconencted while stunned rejoin the game.
+ *
+ * @param client Index of the client that sent the command.
+ * @param args The number of arguments.
+ */
+public Action:ForgiveCommand(client, args)
+{
+    decl String:arg[MAX_NAME_LENGTH];
+    decl String:name[MAX_NAME_LENGTH];
+    decl targets[MAX_CLIENT_IDS];
+	decl String:steam_id[100];
+    new bool:tn_is_ml;
+       
+	if (args < 1)
+	{
+		ReplyToCommand(client, "Usage: ft_forgive <#userid|name>");
+		return Plugin_Handled;
+	}
+    
+	GetCmdArg(1, arg, sizeof(arg));
+    new num_targets = ProcessTargetString(arg, client, targets, sizeof(targets), 0, name, sizeof(name), tn_is_ml);
+                                
+    if (num_targets <= 0)
+    {
+        ReplyToTargetError(client, num_targets);
+    }
+    else
+    {
+        for (new i = 0; i < num_targets; i++)
+        {
+			GetClientAuthString(targets[i], steam_id, sizeof(steam_id));
+			for (new j = 0; j < num_dc_while_stunned; j++)
+			{
+				if (StrEqual(steam_id, dc_while_stunned[j]))
+				{
+					GetCustomClientName(client, name, sizeof(name));
+					PrintToChatAll("%t", "PlayerForgiven", name);
+					dc_while_stunned[j] = "";
+					break;
+				}
+			}
         }
     }
  
