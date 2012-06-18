@@ -30,7 +30,7 @@
     
     "MinigunReloading"
     {
-		"#format"		"{1:d}"
+		"#format"		"{1:.1f}"
         "en"            "Minigun reloading for {1} seconds."
     }
     
@@ -41,7 +41,7 @@
     
     "FlamethrowerReloading"
     {
-		"#format"		"{1:d}"
+		"#format"		"{1:.1f}"
         "en"            "Flamethrower reloading for {1} seconds."
     }
     

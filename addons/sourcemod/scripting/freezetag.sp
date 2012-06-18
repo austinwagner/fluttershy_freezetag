@@ -208,8 +208,8 @@ public OnPluginStart()
     
     // Modified Minigun - Spread (106): 80%, Spinup Time (87): 50%, Deployed Movespeed (75): 209% (230 total)
     TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, SLOT_PRIMARY, 0, 0, "106 ; .8 ; 87 ; .5 ; 75 ; 2.09", 50, _, true);
-    // Modified Bonesaw - +Health (26): 850 (1000 total), Health regen (57): -6 (0 total)
-    TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, SLOT_MELEE, 0, 0, "26 ; 850 ; 57 ; -6", _, _, true);
+    // Modified Bonesaw - +Health (26): 850 (1000 total), Health regen (57): -6 (0 total), Attack Delay (6): 65%
+    TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, SLOT_MELEE, 0, 0, "26 ; 850 ; 57 ; -6 ; 6 ; .65", _, _, true);
     // Modified Grenade Launcher - Projectile Speed (103): 110%
     TF2Items_CreateWeapon(-1002, "tf_weapon_grenadelauncher", 19, SLOT_MELEE, 0, 0, "103 ; 1.1", 4, _, true);
     // Modified Sicky Launcher - +Arm Time (126): -.42 (.5 total), +Max Stickies Deployed (89): -5 (3 total), Self Pushback (59): 50%
@@ -334,6 +334,13 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     new fshy_goal = RoundToCeil(FloatMul(float(num_players), fluttershy_ratio));
     new client;
     
+    // Make sure all of the players are alive
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && !IsClientObserver(i))
+            TF2_RespawnPlayer(i);
+    }
+    
     while (num_fluttershys < fshy_goal)
     {
         client = players[GetRandomInt(0, num_players - 1)];
@@ -344,14 +351,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
             ShowVGUIPanel(client, "class_red", _, false);
         }
     }
-    
-    // Make sure all of the players are alive
-    for (new i = 1; i <= MaxClients; i++)
-    {
-        if (IsClientInGame(i) && !IsClientObserver(i))
-            TF2_RespawnPlayer(i);
-    }
-    
+   
     // Round end events go to this entity
     master_cp = FindEntityByClassname(-1, "team_control_point_master");
     if (master_cp == -1)
@@ -551,13 +551,6 @@ DisablePlugin(bool:unloading = false)
         return;
     
     enabled = false;
-  
-    // Restore convars to original state
-    SetConVarInt(ff_cvar, original_ff_val);
-    SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
-    SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
-    SetConVarInt(max_rounds_cvar, original_max_rounds_val);
-    SetConVarInt(time_limit_cvar, original_time_limit_val);
     
     // Unhook commands and events. If the plugin is ending, these have already been removed.
     if (!unloading)
@@ -605,6 +598,13 @@ DisablePlugin(bool:unloading = false)
         
     }   
      
+    // Restore convars to original state
+    SetConVarInt(ff_cvar, original_ff_val);
+    SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
+    SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
+    SetConVarInt(max_rounds_cvar, original_max_rounds_val);
+    SetConVarInt(time_limit_cvar, original_time_limit_val);
+    
     ServerCommand("mp_scrambleteams");
     ServerCommand("mp_restartgame_immediate 1");
 }
@@ -988,6 +988,10 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
     }
     else if (is_fluttershy[victim] && !IsWorldDeath(attacker))
     {
+        // Crits are not applied to damage so manually apply them.
+        if (damagetype & _:DMG_CRIT == DMG_CRIT)
+            damage *= 3;
+              
         current_health[victim] = current_health[victim] - RoundFloat(damage);
         
         if (current_health[victim] <= 0)
@@ -1033,7 +1037,7 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
  * @param damagePosition A vector representing the location that the damage came from.
  */
 public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3])
-{    
+{       
     // The player is supposed to die, don't modify damage but remove the gib effect that happens
     // due to using an explosive entity to kill the player
     if (bypass_immunity[victim])
@@ -1638,6 +1642,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
             RegenVanilla(client);
 			if (!IsPlayerAlive(client))
 				TF2_RespawnPlayer(client);
+            SetEntProp(client, Prop_Send, "m_CollisionGroup", 2);
             last_class_change[client] = GetGameTime();
         }
         return Plugin_Handled;
@@ -1666,7 +1671,7 @@ TFClassType:ClassNameToEnum(const String:class[])
  */
 bool:IsRedClassAllowed(const String:class[])
 {
-    new TFClassType:class_enum = TF2_GetClass(class);
+    new TFClassType:class_enum = ClassNameToEnum(class);
     return IsRedClassAllowedByEnum(class_enum);
 }
 
