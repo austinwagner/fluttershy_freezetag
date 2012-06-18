@@ -1474,8 +1474,16 @@ public Action:BlockCommandFluttershy(client, const String:command[], argc)
         return Plugin_Handled;
     else if (StrEqual(command, "kill", false) || StrEqual(command, "explode", false))
     {
-        ForcePlayerSuicide(client);
-        TF2_RespawnPlayer(client);
+		if (GetGameTime() - round_start_time > FREE_CLASS_CHANGE_TIME && last_class_change[client] + class_change_time_limit > GetGameTime())
+		{
+			PrintToChat(client, "%t", "TooSoonSuicideError", RoundToNearest(last_class_change[client] + class_change_time_limit - GetGameTime()));
+		}
+		else
+		{
+			ForcePlayerSuicide(client);
+			TF2_RespawnPlayer(client);
+			last_class_change[client] = GetGameTime();
+		}
         return Plugin_Handled;
     }
     else

@@ -128,6 +128,12 @@
         "en"            "You cannot change classes for another {1} seconds."
     }
 	
+	"TooSoonSuicideError"
+    {
+        "#format"       "{1:d}"
+        "en"            "You cannot suicide for another {1} seconds."
+    }
+	
 	"PlayerForgiven"
     {
 		"#format"		"{1:s}"
