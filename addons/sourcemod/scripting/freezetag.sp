@@ -51,11 +51,15 @@ new Handle:sounds[7];
 new original_ff_val;
 new original_scramble_teams_val;
 new original_teams_unbalance_val;
+new original_max_rounds_val;
+new original_time_limit_val;
 
 /****** Game settings ******/
 new Handle:ff_cvar;
 new Handle:scramble_teams_cvar;
 new Handle:teams_unbalance_cvar;
+new Handle:max_rounds_cvar;
+new Handle:time_limit_cvar;
 
 /****** FSFT settings ******/
 new Handle:max_hp_cvar;
@@ -71,6 +75,7 @@ new Handle:round_time_cvar;
 new Handle:fluttershy_ratio_cvar;
 new Handle:map_name_regex_cvar;
 new Handle:class_change_time_limit_cvar;
+new Handle:no_time_or_win_limit_cvar;
 
 /****** Local settings ******/
 new max_hp;
@@ -87,6 +92,7 @@ new Float:fluttershy_ratio;
 new Handle:map_name_regex;
 new Float:class_change_time_limit;
 new Float:round_start_time;
+new bool:no_time_or_win_limit;
 
 /****** Tracking player conditions ******/
 new bool:is_fluttershy[MAX_CLIENT_IDS];
@@ -112,7 +118,6 @@ new master_cp = -1;
 new bool:win_conditions_checked;
 new ring_model;
 new halo_model;
-new Float:tick_interval;
 
 
 
@@ -139,6 +144,7 @@ public OnPluginStart()
     fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "6", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
     map_name_regex_cvar = CreateConVar("freezetag_maps", "freezetag_", "The maps to automatically enable this plugin on, written as a PCRE. If any text in the map name matches the RegEx, the plugin will be enabled.", CVAR_FLAGS);
     class_change_time_limit_cvar = CreateConVar("freezetag_class_change_time_limit", "15.0", "How long in seconds a player must wait before changing classes again.", CVAR_FLAGS);
+    no_time_or_win_limit_cvar = CreateConVar("freezetag_disable_auto_map_change", "1", "1 to temporarily disable map time and win limits, 0 to leave the settings as they are.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
@@ -153,6 +159,7 @@ public OnPluginStart()
     HookConVarChange(round_time_cvar, ConVarChanged);
     HookConVarChange(fluttershy_ratio_cvar, ConVarChanged);
     HookConVarChange(class_change_time_limit_cvar, ConVarChanged);
+    HookConVarChange(no_time_or_win_limit_cvar, ConVarChanged);
     
     // Get the current values for all of the console variables
     max_hp = GetConVarInt(max_hp_cvar);
@@ -168,12 +175,23 @@ public OnPluginStart()
     GetConVarString(map_name_regex_cvar, cvar_string, sizeof(cvar_string)); 
     map_name_regex = CompileRegex(cvar_string);
     class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
+    no_time_or_win_limit = GetConVarBool(no_time_or_win_limit_cvar);
     enabled = false;
     
     // Get the default TF2 convars that will need to be changed
     ff_cvar = FindConVar("mp_friendlyfire");
     scramble_teams_cvar = FindConVar("mp_scrambleteams_auto");
     teams_unbalance_cvar = FindConVar("mp_teams_unbalance_limit");
+    max_rounds_cvar = FindConVar("mp_maxrounds");
+    time_limit_cvar = FindConVar("mp_timelimit");
+    
+    // Hook the default convars to prevent changing the required ones
+    // and to restore the modified value if changed while the plugin is enabled
+    HookConVarChange(ff_cvar, DefaultConVarChanged);
+    HookConVarChange(scramble_teams_cvar, DefaultConVarChanged);
+    HookConVarChange(teams_unbalance_cvar, DefaultConVarChanged);
+    HookConVarChange(max_rounds_cvar, DefaultConVarChanged);
+    HookConVarChange(time_limit_cvar, DefaultConVarChanged);
     
     // Register admin commands for rearranging players and debugging
     RegAdminCmd("ft_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
@@ -185,7 +203,6 @@ public OnPluginStart()
 	RegAdminCmd("ft_forgive", ForgiveCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
-    tick_interval = GetTickInterval();
     
     AutoExecConfig(true, "freezetag");
     
@@ -393,12 +410,70 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
         map_name_regex = CompileRegex(newValue);
     else if (convar == class_change_time_limit_cvar)
         class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
+    else if (convar == no_time_or_win_limit_cvar)
+    {
+        no_time_or_win_limit = GetConVarBool(no_time_or_win_limit_cvar);
+        if (enabled)
+        {
+            if (no_time_or_win_limit)
+            {
+                original_max_rounds_val = GetConVarInt(max_rounds_cvar);
+                original_time_limit_val = GetConVarInt(time_limit_cvar);
+            }
+            else
+            {
+                SetConVarInt(max_rounds_cvar, original_max_rounds_val);
+                SetConVarInt(time_limit_cvar, original_time_limit_val);
+            }
+        }
+    }
     else if (convar == enabled_cvar)
     {
         if (GetConVarBool(convar))
             EnablePlugin();
         else
             DisablePlugin();
+    }
+}
+
+/**
+ * Callback for when a console variable not created by this plugin is changed.
+ * 
+ * @param convar The handle of the console variable that was changed.
+ * @param oldValue The value of the console variable before this event.
+ * @param newValue The value of the console variable after this event.
+ */
+public DefaultConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
+{
+    if (!enabled)
+        return;
+        
+    if (convar == ff_cvar)
+    {
+        original_ff_val = GetConVarInt(ff_cvar);
+        SetConVarInt(ff_cvar, 1);
+    }
+    else if (convar == scramble_teams_cvar)
+    {
+        original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
+        SetConVarInt(scramble_teams_cvar, 0);
+    }
+    else if (convar == teams_unbalance_cvar)
+    {
+        original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
+        SetConVarInt(teams_unbalance_cvar, 0);
+    }
+    else if (convar == max_rounds_cvar)
+    {
+        original_max_rounds_val = GetConVarInt(max_rounds_cvar);
+        if (no_time_or_win_limit)
+            SetConVarInt(max_rounds_cvar, 0);
+    }
+    else if (convar == time_limit_cvar)
+    {
+        original_time_limit_val = GetConVarInt(time_limit_cvar);
+        if (no_time_or_win_limit)
+            SetConVarInt(time_limit_cvar, 0);
     }
 }
 
@@ -416,11 +491,19 @@ EnablePlugin()
     original_ff_val = GetConVarInt(ff_cvar);
     original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
     original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
+    original_max_rounds_val = GetConVarInt(max_rounds_cvar);
+    original_time_limit_val = GetConVarInt(time_limit_cvar);
     
     // Set convars to make the unfreezing and stacked teams work
     SetConVarInt(ff_cvar, 1);
     SetConVarInt(scramble_teams_cvar, 0);
     SetConVarInt(teams_unbalance_cvar, 0);
+    
+    if (no_time_or_win_limit)
+    {
+        SetConVarInt(max_rounds_cvar, 0);
+        SetConVarInt(time_limit_cvar, 0);
+    }
     
     // Initialize arrays
     for (new i = 1; i < MAX_CLIENT_IDS; i++)
@@ -468,12 +551,13 @@ DisablePlugin(bool:unloading = false)
         return;
     
     enabled = false;
-
-    
+  
     // Restore convars to original state
     SetConVarInt(ff_cvar, original_ff_val);
     SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
     SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
+    SetConVarInt(max_rounds_cvar, original_max_rounds_val);
+    SetConVarInt(time_limit_cvar, original_time_limit_val);
     
     // Unhook commands and events. If the plugin is ending, these have already been removed.
     if (!unloading)
@@ -1553,7 +1637,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
             TF2_SetPlayerClass(client, class_enum);
             RegenVanilla(client);
 			if (!IsPlayerAlive(client))
-				RespawnPlayer(client);
+				TF2_RespawnPlayer(client);
             last_class_change[client] = GetGameTime();
         }
         return Plugin_Handled;
