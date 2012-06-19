@@ -1011,17 +1011,12 @@ public Action:WeaponCanSwitchTo(client, weapon)
 }
 
 /**
- * Post event handler for a player taking damage. Values in here cannot be modified,
+ * Event handler for a player taking damage. Values in here cannot be modified,
  * but correctly represent the amount of damage the victim took.
  *
- * @param victim Index of the victim.
- * @param attacker Index of the attacker.
- * @param inflictor Entity index of the damage inflictor (usually the same as attacker).
- * @param damage The amount of damage that the victim took.
- * @param damagetype Bitflags for the type of damage that the victim took.
- * @param weapon Entity index of the weapon that the victim was injured with.
- * @param damageForce A vector representing the amount of force the weapon applied to the victim.
- * @param damagePosition A vector representing the location that the damage came from.
+ * @param event An handle to the event that triggered this callback.
+ * @param name The name of the event that triggered this callback.
+ * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
  */
 public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
 {
