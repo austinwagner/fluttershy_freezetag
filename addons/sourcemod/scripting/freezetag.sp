@@ -141,6 +141,7 @@ new master_cp = -1;
 new bool:win_conditions_checked;
 new ring_model;
 new halo_model;
+new bool:game_over;
 
 
 /**
@@ -237,6 +238,8 @@ public OnPluginStart()
     
     if (GetConVarBool(enabled_cvar))
         EnablePlugin();
+        
+    CreateTimer(1.0, FirstMapStart);
 }
 
 /**
@@ -315,6 +318,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     while (PopStack(killers_stack)) { }
     ClearTrie(dc_while_stunned_trie);
     win_conditions_checked = false;
+    game_over = false;
     
     // Move everyone to RED and reset all of the arrays
     new num_players = 0;
@@ -551,7 +555,7 @@ EnablePlugin()
 }
 
 /**
- * Turns of the plugin. Unhooks events and restores console variables.
+ * Turns off the plugin. Unhooks events and restores console variables.
  *
  * @param unloading Set to true only if this function is being called due to a full unload of the plugin.
  */
@@ -615,18 +619,44 @@ DisablePlugin(bool:unloading = false)
     SetConVarInt(max_rounds_cvar, original_max_rounds_val);
     SetConVarInt(time_limit_cvar, original_time_limit_val);
     
-    ServerCommand("mp_scrambleteams");
-    ServerCommand("mp_restartgame_immediate 1");
+    if (!game_over)
+    {
+        ServerCommand("mp_scrambleteams");
+        ServerCommand("mp_restartgame_immediate 1");
+    }
 }
 
 /**
- * Called when the map is first loaded.
+ * Called when the map is loaded, except on the first map.
  */
 public OnMapStart()
+{
+    MapStarted(false);
+}
+
+/**
+ * Timer callback to run map initialization on the first map loaded by the server.
+ * 
+ * @param timer A handle to the timer that triggered this callback.
+ */
+public Action:FirstMapStart(Handle:timer)
+{
+    MapStarted(true);
+}
+
+/**
+ * Perform initialization that must occur on each map load. 
+ *
+ * @param first_map True if this function is not being called through OnMapStart, otherwise false.
+ */
+MapStarted(bool:first_map)
 {
     decl String:path[PLATFORM_MAX_PATH];
     new size;
     
+    if (first_map)
+        HookEvent("tf_game_over", GameOver);
+        
     for (new i = 0; i < sizeof(sounds); i++)
     {
         size = GetArraySize(sounds[i]);
@@ -645,8 +675,27 @@ public OnMapStart()
         SetConVarBool(enabled_cvar, true);
 }
 
+/**
+ * Event handler for when the game ends. Used on the first map played in place of OnMapEnd
+ * since OnMapEnd is not called on the first map.
+ * 
+ * @param event An handle to the event that triggered this callback.
+ * @param name The name of the event that triggered this callback.
+ * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
+ */
+public GameOver(Handle:event, const String:name[], bool:dontBroadcast)
+{
+    game_over = true;
+    UnhookEvent("tf_game_over", GameOver);
+    SetConVarBool(enabled_cvar, false);
+}
+
+/**
+ * Called when the map is finished, except on the first map.
+ */
 public OnMapEnd()
 {
+    game_over = true;
 	SetConVarBool(enabled_cvar, false);
 }
 
@@ -1428,7 +1477,7 @@ MakeFluttershy(client)
         ChangeClientTeam(client, TEAM_BLU);
         TF2_SetPlayerClass(client, TFClass_Medic);
         TF2_RespawnPlayer(client);
-        RegenVanilla(client);
+        RegenCustom(client);
         displayed_health[client] = max_hp - ((max_hp / 1000) * 1000);
         if (displayed_health[client] <= 0) displayed_health[client] = 1000;
         current_health[client] = max_hp;
@@ -1455,7 +1504,7 @@ ClearFluttershy(client, attacker)
         ChangeClientTeam(client, TEAM_BLU);
         TF2_SetPlayerClass(client, DEFAULT_CLASS);
         TF2_RespawnPlayer(client);
-        RegenVanilla(client);
+        RegenCustom(client);
         StopBeacon(client);
         CheckWinCondition();
     }
@@ -1638,7 +1687,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
                 reload_timer[client] = INVALID_HANDLE;
             }
             TF2_SetPlayerClass(client, class_enum);
-            RegenVanilla(client);
+            RegenCustom(client);
 			if (!IsPlayerAlive(client))
 				TF2_RespawnPlayer(client);
             SetEntProp(client, Prop_Send, "m_CollisionGroup", 2);
@@ -1759,6 +1808,11 @@ CheckWinCondition(bool:round_end = false)
     }
 }
 
+/**
+ * Creates a beacon around a player. Beacons around RED players grow over time.
+ *
+ * @param client The client to place a beacon around.
+ */
 StartBeacon(client)
 {
     if (beacon_timer[client] == INVALID_HANDLE)
@@ -1776,6 +1830,11 @@ StartBeacon(client)
     }
 }
 
+/**
+ * Stops a beacon started by StartBeacon().
+ *
+ * @param client The client whose beacon should be disabled.
+ */
 StopBeacon(client)
 {
     if (beacon_timer[client] != INVALID_HANDLE)
@@ -1821,19 +1880,37 @@ public Action:SpawnBeacon(Handle:timer, any:client)
     }
 }
 
+/**
+ * Event handler for a player applying a new weapon set.
+ * 
+ * @param event An handle to the event that triggered this callback.
+ * @param name The name of the event that triggered this callback.
+ * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
+ */
 public PostInventoryApplication(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-    SetVanillaWeapons(client);
+    SetCustomWeapons(client);
 }
 
-RegenVanilla(client)
+/**
+ * Regenerates a player and gives them the custom weapon set.
+ *
+ * @param The index of the client to regenerate.
+ */
+RegenCustom(client)
 {
     TF2_RegeneratePlayer(client);
-    SetVanillaWeapons(client);
+    SetCustomWeapons(client);
 }
 
-SetVanillaWeapons(client)
+/**
+ * Gives a player a custom weapon loadout. Items are defined in the 
+ * TF2Items Give Weapon configuration.
+ * 
+ * @param The index of the client to give weapons.
+ */
+SetCustomWeapons(client)
 {
     TF2_RemoveWeaponSlot(client, 0);
     TF2_RemoveWeaponSlot(client, 1);
@@ -1896,6 +1973,14 @@ SetVanillaWeapons(client)
     }
 }
 
+/**
+ * Checks if a weapon exists before trying to give it to a player.
+ * 
+ * @param client The index of the client to give a weapon to.
+ * @param weapon_id The index of the weapon to give.
+ * @param fallback_to_default If true and the weapon does not exist, the player will be
+ *                            given the default class weapon for the slot.
+ */
 GiveWeaponIfExists(client, weapon_id, bool:fallback_to_default)
 {
     if (TF2Items_CheckWeapon(weapon_id))
