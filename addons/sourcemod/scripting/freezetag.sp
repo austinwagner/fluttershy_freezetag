@@ -1891,8 +1891,6 @@ SetVanillaWeapons(client)
     }
     case TFClass_Medic:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - MEDIC - SLOT_PRIMARY, false);
-        GiveWeaponIfExists(client, custom_weapon_start - MEDIC - SLOT_SECONDARY, false);
         GiveWeaponIfExists(client, custom_weapon_start - MEDIC - SLOT_MELEE, true);
     }
     }

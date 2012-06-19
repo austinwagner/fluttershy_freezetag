@@ -23,11 +23,37 @@ This will copy the map, sounds, default configurations, plugin, and plugin sourc
 Your server should automatically load the plugin when it starts. If the server is already running, run `sm plugins load freezetag` in the server console.
 
 ## Configuration
+### Basic Configuration
 There are two configuration files for this mod.
 
-`cfg/sourcemod/freezetag.cfg` contains all of the configurable paramters for Freeze Tag. Descriptions of what each cvar does is listed in the config file.
+`cfg/sourcemod/freezetag.cfg` contains all of the configurable paramters for Freeze Tag. Descriptions of what each cvar does is listed in the config file. This file will be automatically create when the plugin is first executed.
 
 `cfg/sourcemod/freezetagsounds.cfg` lists the sounds that the game should play for different events. They are chosen randomly to play from the list. To add a sound to the list, enter its path relative to `tf/sounds/`. These sounds are loaded when the plugin is loaded. If you change this file, you must reload the plugin by entering `sm plugins reload freezetag` into the console.
+
+### Custom Weapons
+This plugin uses the TF2Items Give Weapon plugin to create custom weapons for balance purposes. The configuration file for Give Weapon is located in `addons\sourcemod\configs\tf2items.givecustom.txt`. For more information on how to use this configuration file see the documentation for [Give Weapon](ttp://forums.alliedmods.net/showthread.php?t=141962).
+
+This plugin requires custom weapons to be at specific ids according to the formula: `freezetag_custom_weapon_start - CLASS - SLOT`.
+
+CLASS and SLOT are defined as follows:
+
+    #define SLOT_PRIMARY 0
+    #define SLOT_SECONDARY 1
+    #define SLOT_MELEE 2
+    
+    #define SCOUT 0
+    #define DEMOMAN 3
+    #define PYRO 6
+    #define SNIPER 9
+    #define SPY 12
+    #define HEAVY 15
+    #define SOLDIER 18
+    #define ENGINEER 21
+    #define MEDIC 24
+
+`freezetag_custom_weapon_start` defaults to -1000 and thus requires the range of items from -1000 to -1026 to be unused by other plugins. This should not be changed to a positive number as there is a chance it could overlap with an existing item.
+
+If a custom item is not defined for a slot, the player will be given the default weapon for that slot. Note that Spy and Engineer are disallowed classes so creating custom weapons for these two classes is unnecessary. Also note that Medic is reserved for BLU and will only be given a melee weapon.
 
 ## Running the Game
 If the game is not already running, run `freezetag_enabled 1` in the server console. This will cause the game mode to load and the round to restart. The game mode will remain active until something causes `freezetag_enabled` to become 0.
