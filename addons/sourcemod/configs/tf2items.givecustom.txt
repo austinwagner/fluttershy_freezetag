@@ -1,0 +1,90 @@
+"custom_give_weapons_vlolz"
+{
+	"-1000"
+	{
+		"classname"		"tf_weapon_scattergun"
+		"index"		    "13"
+		"slot"		    "0"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"54 ; .8 ; 45 ; .5"
+		"ammo"		    "6"
+	}
+    
+    "-1001"
+	{
+		"classname"		"tf_weapon_pistol"
+		"index"		    "23"
+		"slot"		    "1"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"1 ; .7"
+		"ammo"		    "12"
+	}
+    
+    "-1003"
+	{
+		"classname"		"tf_weapon_grenadelauncher"
+		"index"		    "19"
+		"slot"		    "0"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"103 ; 1.1"
+		"ammo"		    "4"
+	}
+    
+    "-1004"
+	{
+		"classname"		"tf_weapon_pipebomblauncher"
+		"index"		    "20"
+		"slot"		    "1"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"126 ; -.42 ; 89 ; -5 ; 59 ; .5"
+		"ammo"		    "8"
+	}
+    
+    "-1009"
+	{
+		"classname"		"tf_weapon_sniperrifle"
+		"index"		    "14"
+		"slot"		    "0"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"41 ; 3"
+		"ammo"		    "6"
+	}
+
+    "-1010"
+	{
+		"classname"		"tf_weapon_smg"
+		"index"		    "16"
+		"slot"		    "1"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"6 ; .5"
+		"ammo"		    "30"
+	}
+    
+    "-1015"
+	{
+		"classname"		"tf_weapon_minigun"
+		"index"		    "16"
+		"slot"		    "0"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"106 ; .8 ; 87 ; .5 ; 75 ; 2.09"
+		"ammo"		    "75"
+	}
+    
+    "-1026"
+	{
+		"classname"		"tf_weapon_bonesaw"
+		"index"		    "8"
+		"slot"		    "2"
+		"quality"		"0"
+		"level"		    "0"
+		"attribs"		"26 ; 850 ; 57 ; -6 ; 6 ; .65"
+		"ammo"		    "-1"
+	}
+}
