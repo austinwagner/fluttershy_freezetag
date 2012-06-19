@@ -1,6 +1,5 @@
 "custom_give_weapons_vlolz"
 {
-    # Scattergun - Movespeed (54): 80% (320 total), Bullets per Shot (45): 50% (5 total)
 	"-1000"
 	{
 		"classname"		"tf_weapon_scattergun"
@@ -12,7 +11,6 @@
 		"ammo"		    "6"
 	}
     
-    # Scout Pistol - Damage (1): 70%
     "-1001"
 	{
 		"classname"		"tf_weapon_pistol"
@@ -24,7 +22,6 @@
 		"ammo"		    "12"
 	}
     
-    # Grenade Launcher - Projectile Speed (103): 110%
     "-1003"
 	{
 		"classname"		"tf_weapon_grenadelauncher"
@@ -36,7 +33,6 @@
 		"ammo"		    "4"
 	}
     
-    # Sicky Launcher - +Arm Time (126): -.42 (.5 total), +Max Stickies Deployed (89): -5 (3 total), Self Pushback (59): 50%
     "-1004"
 	{
 		"classname"		"tf_weapon_pipebomblauncher"
@@ -48,7 +44,6 @@
 		"ammo"		    "8"
 	}
     
-    # Sniper Rifle - Charge Rate (41): 300%
     "-1009"
 	{
 		"classname"		"tf_weapon_sniperrifle"
@@ -59,8 +54,7 @@
 		"attribs"		"41 ; 3"
 		"ammo"		    "6"
 	}
-    
-    # SMG - Fire Rate (6): 200%
+
     "-1010"
 	{
 		"classname"		"tf_weapon_smg"
@@ -72,7 +66,6 @@
 		"ammo"		    "30"
 	}
     
-    # Minigun - Spread (106): 80%, Spinup Time (87): 50%, Deployed Movespeed (75): 209% (230 total)
     "-1015"
 	{
 		"classname"		"tf_weapon_minigun"
@@ -84,7 +77,6 @@
 		"ammo"		    "75"
 	}
     
-    # Bonesaw - +Health (26): 850 (1000 total), Health regen (57): -6 (0 total), Attack Delay (6): 65%
     "-1026"
 	{
 		"classname"		"tf_weapon_bonesaw"
