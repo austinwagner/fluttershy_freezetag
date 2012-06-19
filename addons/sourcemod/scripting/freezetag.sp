@@ -8,7 +8,7 @@
 #undef REQUIRE_PLUGIN
 #include <tf2items_giveweapon>
 
-#define PLUGIN_VERSION "0.4.0"
+#define PLUGIN_VERSION "0.4.1"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 #define MAX_DC_PROT 64
@@ -30,11 +30,22 @@
 
 #define PREVENT_DEATH_HP 3000
 #define SHAME_STUN_DURATION 5000.0
+#define FREE_CLASS_CHANGE_TIME 10.0
+#define DEFAULT_CLASS TFClass_Soldier
+
 #define SLOT_PRIMARY 0
 #define SLOT_SECONDARY 1
 #define SLOT_MELEE 2
-#define FREE_CLASS_CHANGE_TIME 10.0
-#define DEFAULT_CLASS TFClass_Soldier
+
+#define SCOUT 0
+#define DEMOMAN 3
+#define PYRO 6
+#define SNIPER 9
+#define SPY 12
+#define HEAVY 15
+#define SOLDIER 18
+#define ENGINEER 21
+#define MEDIC 24
 
 public Plugin:myinfo =
 {
@@ -43,6 +54,19 @@ public Plugin:myinfo =
 	description = "Defeat the Fluttershys before they freeze everyone.",
 	version = PLUGIN_VERSION,
 	url = ""
+};
+
+new default_weapon_ids[27] = 
+{
+    13, 23, 0,
+    19, 20, 1,
+    21, 12, 2,
+    14, 16, 3,
+    24, -1, 4,
+    15, 11, 5,
+    18, 10, 6,
+    9, 22, 7,
+    17, 29, 8
 };
 
 new Handle:sounds[7];
@@ -76,6 +100,7 @@ new Handle:fluttershy_ratio_cvar;
 new Handle:map_name_regex_cvar;
 new Handle:class_change_time_limit_cvar;
 new Handle:no_time_or_win_limit_cvar;
+new Handle:custom_weapon_start_cvar;
 
 /****** Local settings ******/
 new max_hp;
@@ -93,6 +118,7 @@ new Handle:map_name_regex;
 new Float:class_change_time_limit;
 new Float:round_start_time;
 new bool:no_time_or_win_limit;
+new custom_weapon_start;
 
 /****** Tracking player conditions ******/
 new bool:is_fluttershy[MAX_CLIENT_IDS];
@@ -145,6 +171,7 @@ public OnPluginStart()
     map_name_regex_cvar = CreateConVar("freezetag_maps", "freezetag_", "The maps to automatically enable this plugin on, written as a PCRE. If any text in the map name matches the RegEx, the plugin will be enabled.", CVAR_FLAGS);
     class_change_time_limit_cvar = CreateConVar("freezetag_class_change_time_limit", "15.0", "How long in seconds a player must wait before changing classes again.", CVAR_FLAGS);
     no_time_or_win_limit_cvar = CreateConVar("freezetag_disable_auto_map_change", "1", "1 to temporarily disable map time and win limits, 0 to leave the settings as they are.", CVAR_FLAGS);
+    custom_weapon_start_cvar = CreateConVar("freezetag_custom_weapon_start", "-1000", "The starting ID for the custom weapons used by this plugin. See the README for a mapping of offset to weapon.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
@@ -160,6 +187,7 @@ public OnPluginStart()
     HookConVarChange(fluttershy_ratio_cvar, ConVarChanged);
     HookConVarChange(class_change_time_limit_cvar, ConVarChanged);
     HookConVarChange(no_time_or_win_limit_cvar, ConVarChanged);
+    HookConVarChange(custom_weapon_start_cvar, ConVarChanged);
     
     // Get the current values for all of the console variables
     max_hp = GetConVarInt(max_hp_cvar);
@@ -176,6 +204,7 @@ public OnPluginStart()
     map_name_regex = CompileRegex(cvar_string);
     class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
     no_time_or_win_limit = GetConVarBool(no_time_or_win_limit_cvar);
+    custom_weapon_start = GetConVarInt(custon_weapon_start_cvar);
     enabled = false;
     
     // Get the default TF2 convars that will need to be changed
@@ -205,23 +234,6 @@ public OnPluginStart()
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     
     AutoExecConfig(true, "freezetag");
-    
-    // Modified Minigun - Spread (106): 80%, Spinup Time (87): 50%, Deployed Movespeed (75): 209% (230 total)
-    TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, SLOT_PRIMARY, 0, 0, "106 ; .8 ; 87 ; .5 ; 75 ; 2.09", 50, _, true);
-    // Modified Bonesaw - +Health (26): 850 (1000 total), Health regen (57): -6 (0 total), Attack Delay (6): 65%
-    TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, SLOT_MELEE, 0, 0, "26 ; 850 ; 57 ; -6 ; 6 ; .65", _, _, true);
-    // Modified Grenade Launcher - Projectile Speed (103): 110%
-    TF2Items_CreateWeapon(-1002, "tf_weapon_grenadelauncher", 19, SLOT_MELEE, 0, 0, "103 ; 1.1", 4, _, true);
-    // Modified Sicky Launcher - +Arm Time (126): -.42 (.5 total), +Max Stickies Deployed (89): -5 (3 total), Self Pushback (59): 50%
-    TF2Items_CreateWeapon(-1003, "tf_weapon_pipebomblauncher", 20, SLOT_SECONDARY, 0, 0, "126 ; -.42 ; 89 ; -5 ; 59 ; .5", 8, _, true);
-    // Modified Scattergun - Movespeed (54): 80% (320 total), Bullets per Shot (45): 50% (5 total)
-    TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, SLOT_PRIMARY, 0, 0, "54 ; .8 ; 45 ; .5", 6, _, true);
-    // Modified SMG - Fire Rate (6): 200%
-    TF2Items_CreateWeapon(-1005, "tf_weapon_smg", 16, SLOT_SECONDARY, 0, 0, "6 ; .5", 6, _, true);
-    // Modified Rifle - Charge Rate (41): 300%
-    TF2Items_CreateWeapon(-1006, "tf_weapon_sniperrifle", 14, SLOT_PRIMARY, 0, 0, "41 ; 3", 6, _, true);
-	// Modified Pistol - Damage (1): 70%
-	TF2Items_CreateWeapon(-1007, "tf_weapon_pistol", 23, SLOT_SECONDARY, 0, 0, "1 ; .7", 12, _, true);
     
     LoadSoundConfig();
     
@@ -1843,55 +1855,67 @@ SetVanillaWeapons(client)
     {
     case TFClass_Scout:
     {
-        TF2Items_GiveWeapon(client, -1004);
-        TF2Items_GiveWeapon(client, -1007);
-        TF2Items_GiveWeapon(client, 0);
+        GiveWeaponIfExists(client, custom_weapon_start - SCOUT - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SCOUT - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SCOUT - SLOT_MELEE, true);
     }
     case TFClass_DemoMan:
     {
-        TF2Items_GiveWeapon(client, -1002);
-        TF2Items_GiveWeapon(client, -1003);
-        TF2Items_GiveWeapon(client, 1);
+        GiveWeaponIfExists(client, custom_weapon_start - DEMOMAN - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - DEMOMAN - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - DEMOMAN - SLOT_MELEE, true);
     }
     case TFClass_Pyro:
     {
-        TF2Items_GiveWeapon(client, 21);
-        TF2Items_GiveWeapon(client, 12);
-        TF2Items_GiveWeapon(client, 2);
+        GiveWeaponIfExists(client, custom_weapon_start - PYRO - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - PYRO - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - PYRO - SLOT_MELEE, true);
     }
     case TFClass_Sniper:
     {
-        TF2Items_GiveWeapon(client, -1006);
-        TF2Items_GiveWeapon(client, -1005);
-        TF2Items_GiveWeapon(client, 3);
+        GiveWeaponIfExists(client, custom_weapon_start - SNIPER - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SNIPER - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SNIPER - SLOT_MELEE, true);
     }
     case TFClass_Spy:
     {
-        TF2Items_GiveWeapon(client, 24);
-        // Can't give sapper?
-        TF2Items_GiveWeapon(client, 4);
+        GiveWeaponIfExists(client, custom_weapon_start - SPY - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SPY - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SPY - SLOT_MELEE, true);
     }
     case TFClass_Heavy:
     {
-        TF2Items_GiveWeapon(client, -1000);
-        TF2Items_GiveWeapon(client, 11);
-        TF2Items_GiveWeapon(client, 5);
+        GiveWeaponIfExists(client, custom_weapon_start - HEAVY - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - HEAVY - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - HEAVY - SLOT_MELEE, true);
     }
     case TFClass_Soldier:
     {
-        TF2Items_GiveWeapon(client, 18);
-        TF2Items_GiveWeapon(client, 10);
-        TF2Items_GiveWeapon(client, 6);
+        GiveWeaponIfExists(client, custom_weapon_start - SOLDIER - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SOLDIER - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - SOLDIER - SLOT_MELEE, true);
     }
     case TFClass_Engineer:
     {
-        TF2Items_GiveWeapon(client, 9);
-        TF2Items_GiveWeapon(client, 22);
-        TF2Items_GiveWeapon(client, 7);
+        GiveWeaponIfExists(client, custom_weapon_start - ENGINEER - SLOT_PRIMARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - ENGINEER - SLOT_SECONDARY, true);
+        GiveWeaponIfExists(client, custom_weapon_start - ENGINEER - SLOT_MELEE, true);
     }
     case TFClass_Medic:
     {
-        TF2Items_GiveWeapon(client, -1001);
+        GiveWeaponIfExists(client, custom_weapon_start - MEDIC - SLOT_PRIMARY, false);
+        GiveWeaponIfExists(client, custom_weapon_start - MEDIC - SLOT_SECONDARY, false);
+        GiveWeaponIfExists(client, custom_weapon_start - MEDIC - SLOT_MELEE, true);
     }
+    }
+}
+
+GiveWeaponIfExists(client, weapon_id, bool:fallback_to_default)
+{
+    if (TF2Items_CheckWeapon(weapon_id))
+        TF2Items_GiveWeapon(client, weapon_id);
+    else if (fallback_to_default)
+    {
+        TF2Items_GiveWeapon(client, default_weapon_ids[(weapon_id - custom_weapon_start) * -1);
     }
 }
