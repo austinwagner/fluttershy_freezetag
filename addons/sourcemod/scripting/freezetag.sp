@@ -548,10 +548,9 @@ EnablePlugin()
     HookEvent("teamplay_round_win", RoundEnd);
     HookEvent("teamplay_round_stalemate", RoundEnd);
     HookEvent("post_inventory_application", PostInventoryApplication);
+    HookEvent("player_hurt", PlayerHurt);
     
     ServerCommand("mp_restartgame_immediate 1");
-
-
 }
 
 /**
@@ -579,6 +578,7 @@ DisablePlugin(bool:unloading = false)
         UnhookEvent("teamplay_round_win", RoundEnd);
         UnhookEvent("teamplay_round_stalemate", RoundEnd);
         UnhookEvent("post_inventory_application", PostInventoryApplication);
+        UnhookEvent("player_hurt", PlayerHurt);
     }
     
     // Remove SDKHooks player event hooks
@@ -587,7 +587,6 @@ DisablePlugin(bool:unloading = false)
         if (IsClientInGame(i))
         {
             SDKUnhook(i, SDKHook_OnTakeDamage, OnTakeDamage);
-            SDKUnhook(i, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
             SDKUnhook(i, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
             SDKUnhook(i, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
             SDKUnhook(i, SDKHook_Spawn, OnSpawn);
@@ -899,7 +898,6 @@ public OnClientPutInServer(client)
 SetupPlayer(client)
 {
     SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-    SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
     SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
     SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
     SDKHook(client, SDKHook_Spawn, OnSpawn);
@@ -1025,10 +1023,14 @@ public Action:WeaponCanSwitchTo(client, weapon)
  * @param damageForce A vector representing the amount of force the weapon applied to the victim.
  * @param damagePosition A vector representing the location that the damage came from.
  */
-public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, weapon, const Float:damageForce[3], const Float:damagePosition[3])
+public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
 {
     decl String:victim_name[MAX_NAME_LENGTH];
     decl String:attacker_name[MAX_NAME_LENGTH];
+    
+    new victim = GetClientOfUserId(GetEventInt(event, "userid"));
+    new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+    new damage = GetEventInt(event, "damageamount");
     
     GetCustomClientName(victim, victim_name, sizeof(victim_name));
     GetCustomClientName(attacker, attacker_name, sizeof(attacker_name));
@@ -1039,22 +1041,19 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
         bypass_immunity[victim] = false;
     }
     else if (is_fluttershy[victim] && !IsWorldDeath(attacker))
-    {
-        // Crits are not applied to damage so manually apply them.
-        if (damagetype & _:DMG_CRIT == DMG_CRIT)
-            damage *= 3;
-              
-        current_health[victim] = current_health[victim] - RoundFloat(damage);
+    {   
+        PrintToChatAll("%d", damage);
+        current_health[victim] = current_health[victim] - damage;
         
         if (current_health[victim] <= 0)
         {
             PushStackCell(killers_stack, GetClientUserId(attacker));
-            PrintToChatAll("%t", "PlayerDefeat",  attacker_name, victim_name);
+            PrintToChatAll("%t", "PlayerDefeat", attacker_name, victim_name);
             ClearFluttershy(victim, attacker);
         }
         else
         {
-            displayed_health[victim] = displayed_health[victim] - RoundFloat(damage);
+            displayed_health[victim] = displayed_health[victim] - damage;
             
             // Refill the life bar and display to the user the multiple of 1000 that his life is now counting down from
             if (displayed_health[victim] <= 0)
@@ -1072,6 +1071,8 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
         // Set the health back to normal
         SetEntityHealth(victim, current_health[victim]);
     }
+    
+    return Plugin_Continue;
 }
 
 /**
