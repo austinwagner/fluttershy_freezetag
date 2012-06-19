@@ -8,7 +8,7 @@
 #undef REQUIRE_PLUGIN
 #include <tf2items_giveweapon>
 
-#define PLUGIN_VERSION "0.4.1"
+#define PLUGIN_VERSION "0.5.0"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 
