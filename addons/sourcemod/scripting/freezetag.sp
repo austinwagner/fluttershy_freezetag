@@ -11,7 +11,6 @@
 #define PLUGIN_VERSION "0.4.1"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
-#define MAX_DC_PROT 64
 
 /****** Teams ******/
 #define TEAM_RED 2
@@ -126,7 +125,6 @@ new displayed_health[MAX_CLIENT_IDS];
 new current_health[MAX_CLIENT_IDS];
 new bool:bypass_immunity[MAX_CLIENT_IDS];
 new bool:stun_immunity[MAX_CLIENT_IDS];
-new String:dc_while_stunned[MAX_DC_PROT][100];
 new bool:airblast_cooldown[MAX_CLIENT_IDS];
 new Handle:airblast_timer[MAX_CLIENT_IDS];
 new Handle:reload_timer[MAX_CLIENT_IDS];
@@ -136,15 +134,13 @@ new Handle:sound_busy_timer[MAX_CLIENT_IDS];
 new Float:last_class_change[MAX_CLIENT_IDS];
 
 /****** Misc ******/
-new killer[16];
-new num_killers;
-new num_dc_while_stunned;
+new Handle:killers_stack;
+new Handle:dc_while_stunned_trie;
 new ammo_offset;
 new master_cp = -1;
 new bool:win_conditions_checked;
 new ring_model;
 new halo_model;
-
 
 
 /**
@@ -232,6 +228,8 @@ public OnPluginStart()
 	RegAdminCmd("ft_forgive", ForgiveCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
+    killers_stack = CreateStack();
+    dc_while_stunned_trie = CreateTrie();
     
     AutoExecConfig(true, "freezetag");
     
@@ -313,14 +311,10 @@ public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
     decl players[MAX_CLIENT_IDS];
-    num_killers = 0;
-    num_dc_while_stunned = 0;
-    win_conditions_checked = false;
     
-    for (new i = 0; i < MAX_DC_PROT; i++)
-    {
-        dc_while_stunned[i] = "";
-    }
+    while (PopStack(killers_stack)) { }
+    ClearTrie(dc_while_stunned_trie);
+    win_conditions_checked = false;
     
     // Move everyone to RED and reset all of the arrays
     new num_players = 0;
@@ -336,7 +330,6 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
             ChangeClientTeam(i, TEAM_RED);
             players[num_players] = i;
             num_players++;
-            SetEntProp(i, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
         }
         StopBeacon(i);
     }
@@ -350,7 +343,10 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     for (new i = 1; i <= MaxClients; i++)
     {
         if (IsClientInGame(i) && !IsClientObserver(i))
+        {
             TF2_RespawnPlayer(i);
+            SetEntProp(i, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
+        }
     }
     
     while (num_fluttershys < fshy_goal)
@@ -880,8 +876,7 @@ public OnClientDisconnect(client)
         {
             TF2_RemoveCondition(client, TFCond_Dazed); // Try to prevent player's camera from bugging out
             GetClientAuthString(client, steam_id, sizeof(steam_id));
-            dc_while_stunned[num_dc_while_stunned % MAX_DC_PROT] = steam_id;
-            num_dc_while_stunned++;
+            SetTrieValue(dc_while_stunned_trie, steam_id, 0);
         }
             
         is_fluttershy[client] = false;
@@ -947,16 +942,10 @@ public Action:OnSpawn(client)
  bool:ShouldShame(client)
 {
     decl String:steam_id[100];
+    new temp;
     
     GetClientAuthString(client, steam_id, sizeof(steam_id));
-    
-    for (new i = 0; i < MAX_DC_PROT; i++)
-    {
-        if (StrEqual(steam_id, dc_while_stunned[i]))
-            return true;
-    }
-    
-    return false;
+    return GetTrieValue(dc_while_stunned_trie, steam_id, temp);
 }
 
 /**
@@ -1010,8 +999,7 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, w
         
         if (current_health[victim] <= 0)
         {
-            killer[num_killers] = GetClientUserId(attacker);
-            num_killers++;
+            PushStackCell(killers_stack, GetClientUserId(attacker));
             PrintToChatAll("%t", "PlayerDefeat",  attacker_name, victim_name);
             ClearFluttershy(victim, attacker);
         }
@@ -1391,7 +1379,8 @@ public Action:ForgiveCommand(client, args)
     decl targets[MAX_CLIENT_IDS];
 	decl String:steam_id[100];
     new bool:tn_is_ml;
-       
+    new temp;
+    
 	if (args < 1)
 	{
 		ReplyToCommand(client, "Usage: ft_forgive <#userid|name>");
@@ -1408,18 +1397,14 @@ public Action:ForgiveCommand(client, args)
     else
     {
         for (new i = 0; i < num_targets; i++)
-        {
-			GetClientAuthString(targets[i], steam_id, sizeof(steam_id));
-			for (new j = 0; j < num_dc_while_stunned; j++)
-			{
-				if (StrEqual(steam_id, dc_while_stunned[j]))
-				{
-					GetCustomClientName(client, name, sizeof(name));
-					PrintToChatAll("%t", "PlayerForgiven", name);
-					dc_while_stunned[j] = "";
-					break;
-				}
-			}
+        { 
+            GetClientAuthString(targets[i], steam_id, sizeof(steam_id));
+            if (GetTrieValue(dc_while_stunned_trie, steam_id, temp))
+            {
+                GetCustomClientName(client, name, sizeof(name));
+                PrintToChatAll("%t", "PlayerForgiven", name);
+                RemoveFromTrie(dc_while_stunned_trie, steam_id);
+            }
         }
     }
  
@@ -1709,6 +1694,7 @@ CheckWinCondition(bool:round_end = false)
     new bool:fluttershy_exists = false;
     new bool:all_players_stunned = true;
     new clientid;
+    new userid;
     
     if (win_conditions_checked)
         return;
@@ -1734,9 +1720,9 @@ CheckWinCondition(bool:round_end = false)
         EmitSoundToAll(sound_path, _, _, SNDLEVEL_DEFAULT);
         PrintToChatAll("%t", "FluttershyLose");
         PrintToChatAll("%t", "Winners");
-        for (new i = 0; i < num_killers; i++)
+        while (PopStackCell(killers_stack, userid))
         {
-            clientid = GetClientOfUserId(killer[i]) ;
+            clientid = GetClientOfUserId(userid);
             if (clientid > 0 && IsClientInGame(clientid))
                 PrintToChatAll("- %N", clientid);
         }
@@ -1756,12 +1742,12 @@ CheckWinCondition(bool:round_end = false)
             if (is_fluttershy[i])
                 PrintToChatAll("- %N", i);
         }
-        for (new i = 0; i < num_killers; i++)
+        while (PopStackCell(killers_stack, userid))
         {
-            clientid = GetClientOfUserId(killer[i]) ;
+            clientid = GetClientOfUserId(userid);
             if (clientid > 0 && IsClientInGame(clientid))
                 PrintToChatAll("- %N", clientid);
-        }     
+        }  
       
         win_conditions_checked = true;
         
