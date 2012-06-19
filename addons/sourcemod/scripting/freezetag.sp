@@ -204,7 +204,7 @@ public OnPluginStart()
     map_name_regex = CompileRegex(cvar_string);
     class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
     no_time_or_win_limit = GetConVarBool(no_time_or_win_limit_cvar);
-    custom_weapon_start = GetConVarInt(custon_weapon_start_cvar);
+    custom_weapon_start = GetConVarInt(custom_weapon_start_cvar);
     enabled = false;
     
     // Get the default TF2 convars that will need to be changed
@@ -422,6 +422,8 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
         map_name_regex = CompileRegex(newValue);
     else if (convar == class_change_time_limit_cvar)
         class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
+    else if (convar == custom_weapon_start_cvar)
+        custom_weapon_start = GetConVarInt(custom_weapon_start_cvar);
     else if (convar == no_time_or_win_limit_cvar)
     {
         no_time_or_win_limit = GetConVarBool(no_time_or_win_limit_cvar);
@@ -1915,7 +1917,5 @@ GiveWeaponIfExists(client, weapon_id, bool:fallback_to_default)
     if (TF2Items_CheckWeapon(weapon_id))
         TF2Items_GiveWeapon(client, weapon_id);
     else if (fallback_to_default)
-    {
-        TF2Items_GiveWeapon(client, default_weapon_ids[(weapon_id - custom_weapon_start) * -1);
-    }
+        TF2Items_GiveWeapon(client, default_weapon_ids[(weapon_id - custom_weapon_start) * -1]);
 }
