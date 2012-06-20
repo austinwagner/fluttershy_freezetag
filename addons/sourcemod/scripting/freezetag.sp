@@ -228,6 +228,8 @@ public OnPluginStart()
     RegAdminCmd("ft_disable", DisableCommand, ADMFLAG_GENERIC);
 	RegAdminCmd("ft_forgive", ForgiveCommand, ADMFLAG_GENERIC);
     
+    RegConsoleCmd("ft_fixcamera", FixCameraCommand);
+    
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
     killers_stack = CreateStack();
     dc_while_stunned_trie = CreateTrie();
@@ -902,7 +904,10 @@ SetupPlayer(client)
     SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
     SDKHook(client, SDKHook_Spawn, OnSpawn);
     SDKHook(client, SDKHook_PreThinkPost, PreThinkPost);
-    ChangeClientTeam(client, TEAM_RED);
+    if (!ShouldShame(client))
+        ChangeClientTeam(client, TEAM_RED);
+    else
+        ChangeClientTeam(client, 1);
 }
 
 /**
@@ -916,8 +921,6 @@ public OnClientDisconnect(client)
     
     if (enabled)
     {
-        is_fluttershy[client] = false;
-            
         // If a player disconnected while stunned, make a note of it
         if (TF2_IsPlayerInCondition(client, TFCond_Dazed))
         {
@@ -955,6 +958,9 @@ public OnClientDisconnect(client)
  */
 public Action:OnSpawn(client)
 {
+    if (GetClientTeam(client) == 1)
+        return Plugin_Continue;
+        
     SetEntProp(client, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
     if (!is_fluttershy[client] && GetClientTeam(client) != TEAM_RED)
     {
@@ -1037,7 +1043,6 @@ public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
     }
     else if (is_fluttershy[victim] && !IsWorldDeath(attacker))
     {   
-        PrintToChatAll("%d", damage);
         current_health[victim] = current_health[victim] - damage;
         
         if (current_health[victim] <= 0)
@@ -1456,6 +1461,13 @@ public Action:ForgiveCommand(client, args)
 	return Plugin_Handled;
 }
 
+public Action:FixCameraCommand(client, args)
+{
+    if (enabled && !IsClientObserver(client) && !TF2_IsPlayerInCondition(client, TFCond_Dazed))
+        TF2_StunPlayer(client, 0.1, 0.0, TF_STUNFLAG_BONKSTUCK, client);
+    return Plugin_Handled;
+}
+
 /**
  * Turns a player into a Fluttershy.
  *
@@ -1497,7 +1509,7 @@ ClearFluttershy(client, attacker)
         is_fluttershy[client] = false;
         bypass_immunity[client] = true;
         KillPlayer(client, attacker);
-        ChangeClientTeam(client, TEAM_BLU);
+        ChangeClientTeam(client, TEAM_RED);
         TF2_SetPlayerClass(client, DEFAULT_CLASS);
         TF2_RespawnPlayer(client);
         RegenCustom(client);
@@ -1886,7 +1898,8 @@ public Action:SpawnBeacon(Handle:timer, any:client)
 public PostInventoryApplication(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-    SetCustomWeapons(client);
+    if (!IsClientObserver(client))
+        SetCustomWeapons(client);
 }
 
 /**
