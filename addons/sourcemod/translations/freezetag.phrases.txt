@@ -30,8 +30,7 @@
     
     "MinigunReloading"
     {
-		"#format"		"{1:.1f}"
-        "en"            "Minigun reloading for {1} seconds."
+        "en"            "Minigun reloading..."
     }
     
     "MinigunReloaded"
@@ -41,8 +40,7 @@
     
     "FlamethrowerReloading"
     {
-		"#format"		"{1:.1f}"
-        "en"            "Flamethrower reloading for {1} seconds."
+        "en"            "Flamethrower reloading..."
     }
     
     "FlamethrowerReloaded"
@@ -126,17 +124,5 @@
     {
         "#format"       "{1:d}"
         "en"            "You cannot change classes for another {1} seconds."
-    }
-	
-	"TooSoonSuicideError"
-    {
-        "#format"       "{1:d}"
-        "en"            "You cannot suicide for another {1} seconds."
-    }
-	
-	"PlayerForgiven"
-    {
-		"#format"		"{1:s}"
-        "en"            "The Guardians have forgiven {1}"
     }
 }

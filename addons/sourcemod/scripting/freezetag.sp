@@ -8,9 +8,10 @@
 #undef REQUIRE_PLUGIN
 #include <tf2items_giveweapon>
 
-#define PLUGIN_VERSION "0.5.0"
+#define PLUGIN_VERSION "0.4.0"
 #define CVAR_FLAGS FCVAR_PLUGIN | FCVAR_NOTIFY
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
+#define MAX_DC_PROT 64
 
 /****** Teams ******/
 #define TEAM_RED 2
@@ -29,43 +30,18 @@
 
 #define PREVENT_DEATH_HP 3000
 #define SHAME_STUN_DURATION 5000.0
-#define FREE_CLASS_CHANGE_TIME 10.0
-#define DEFAULT_CLASS TFClass_Soldier
-
 #define SLOT_PRIMARY 0
 #define SLOT_SECONDARY 1
 #define SLOT_MELEE 2
-
-#define SCOUT 0
-#define DEMOMAN 3
-#define PYRO 6
-#define SNIPER 9
-#define SPY 12
-#define HEAVY 15
-#define SOLDIER 18
-#define ENGINEER 21
-#define MEDIC 24
+#define FREE_CLASS_CHANGE_TIME 10.0
 
 public Plugin:myinfo =
 {
 	name = "Fluttershy's Freeze Tag",
-	author = "Ambit, RogueDarkJedi",
+	author = "Ambit (idea by RogueDarkJedi)",
 	description = "Defeat the Fluttershys before they freeze everyone.",
 	version = PLUGIN_VERSION,
 	url = ""
-};
-
-new default_weapon_ids[27] = 
-{
-    13, 23, 0,
-    19, 20, 1,
-    21, 12, 2,
-    14, 16, 3,
-    24, -1, 4,
-    15, 11, 5,
-    18, 10, 6,
-    9, 22, 7,
-    17, 29, 8
 };
 
 new Handle:sounds[7];
@@ -74,15 +50,11 @@ new Handle:sounds[7];
 new original_ff_val;
 new original_scramble_teams_val;
 new original_teams_unbalance_val;
-new original_max_rounds_val;
-new original_time_limit_val;
 
 /****** Game settings ******/
 new Handle:ff_cvar;
 new Handle:scramble_teams_cvar;
 new Handle:teams_unbalance_cvar;
-new Handle:max_rounds_cvar;
-new Handle:time_limit_cvar;
 
 /****** FSFT settings ******/
 new Handle:max_hp_cvar;
@@ -98,8 +70,6 @@ new Handle:round_time_cvar;
 new Handle:fluttershy_ratio_cvar;
 new Handle:map_name_regex_cvar;
 new Handle:class_change_time_limit_cvar;
-new Handle:no_time_or_win_limit_cvar;
-new Handle:custom_weapon_start_cvar;
 
 /****** Local settings ******/
 new max_hp;
@@ -116,8 +86,6 @@ new Float:fluttershy_ratio;
 new Handle:map_name_regex;
 new Float:class_change_time_limit;
 new Float:round_start_time;
-new bool:no_time_or_win_limit;
-new custom_weapon_start;
 
 /****** Tracking player conditions ******/
 new bool:is_fluttershy[MAX_CLIENT_IDS];
@@ -125,6 +93,7 @@ new displayed_health[MAX_CLIENT_IDS];
 new current_health[MAX_CLIENT_IDS];
 new bool:bypass_immunity[MAX_CLIENT_IDS];
 new bool:stun_immunity[MAX_CLIENT_IDS];
+new String:dc_while_stunned[MAX_DC_PROT][100];
 new bool:airblast_cooldown[MAX_CLIENT_IDS];
 new Handle:airblast_timer[MAX_CLIENT_IDS];
 new Handle:reload_timer[MAX_CLIENT_IDS];
@@ -134,14 +103,16 @@ new Handle:sound_busy_timer[MAX_CLIENT_IDS];
 new Float:last_class_change[MAX_CLIENT_IDS];
 
 /****** Misc ******/
-new Handle:killers_stack;
-new Handle:dc_while_stunned_trie;
+new killer[16];
+new num_killers;
+new num_dc_while_stunned;
 new ammo_offset;
 new master_cp = -1;
 new bool:win_conditions_checked;
 new ring_model;
 new halo_model;
-new bool:game_over;
+new Float:tick_interval;
+
 
 
 /**
@@ -167,8 +138,6 @@ public OnPluginStart()
     fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "6", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
     map_name_regex_cvar = CreateConVar("freezetag_maps", "freezetag_", "The maps to automatically enable this plugin on, written as a PCRE. If any text in the map name matches the RegEx, the plugin will be enabled.", CVAR_FLAGS);
     class_change_time_limit_cvar = CreateConVar("freezetag_class_change_time_limit", "15.0", "How long in seconds a player must wait before changing classes again.", CVAR_FLAGS);
-    no_time_or_win_limit_cvar = CreateConVar("freezetag_disable_auto_map_change", "1", "1 to temporarily disable map time and win limits, 0 to leave the settings as they are.", CVAR_FLAGS);
-    custom_weapon_start_cvar = CreateConVar("freezetag_custom_weapon_start", "-1000", "The starting ID for the custom weapons used by this plugin. See the README for a mapping of offset to weapon.", CVAR_FLAGS);
     CreateConVar("freezetag_version", PLUGIN_VERSION, "Fluttershy Freeze Tag version", CVAR_FLAGS | FCVAR_REPLICATED | FCVAR_DONTRECORD);
     
     HookConVarChange(max_hp_cvar, ConVarChanged);
@@ -183,8 +152,6 @@ public OnPluginStart()
     HookConVarChange(round_time_cvar, ConVarChanged);
     HookConVarChange(fluttershy_ratio_cvar, ConVarChanged);
     HookConVarChange(class_change_time_limit_cvar, ConVarChanged);
-    HookConVarChange(no_time_or_win_limit_cvar, ConVarChanged);
-    HookConVarChange(custom_weapon_start_cvar, ConVarChanged);
     
     // Get the current values for all of the console variables
     max_hp = GetConVarInt(max_hp_cvar);
@@ -200,24 +167,12 @@ public OnPluginStart()
     GetConVarString(map_name_regex_cvar, cvar_string, sizeof(cvar_string)); 
     map_name_regex = CompileRegex(cvar_string);
     class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
-    no_time_or_win_limit = GetConVarBool(no_time_or_win_limit_cvar);
-    custom_weapon_start = GetConVarInt(custom_weapon_start_cvar);
     enabled = false;
     
     // Get the default TF2 convars that will need to be changed
     ff_cvar = FindConVar("mp_friendlyfire");
     scramble_teams_cvar = FindConVar("mp_scrambleteams_auto");
     teams_unbalance_cvar = FindConVar("mp_teams_unbalance_limit");
-    max_rounds_cvar = FindConVar("mp_maxrounds");
-    time_limit_cvar = FindConVar("mp_timelimit");
-    
-    // Hook the default convars to prevent changing the required ones
-    // and to restore the modified value if changed while the plugin is enabled
-    HookConVarChange(ff_cvar, DefaultConVarChanged);
-    HookConVarChange(scramble_teams_cvar, DefaultConVarChanged);
-    HookConVarChange(teams_unbalance_cvar, DefaultConVarChanged);
-    HookConVarChange(max_rounds_cvar, DefaultConVarChanged);
-    HookConVarChange(time_limit_cvar, DefaultConVarChanged);
     
     // Register admin commands for rearranging players and debugging
     RegAdminCmd("ft_unfreeze", UnfreezePlayerCommand, ADMFLAG_GENERIC);
@@ -226,20 +181,31 @@ public OnPluginStart()
     RegAdminCmd("ft_unflutts", ClearFluttershyCommand, ADMFLAG_GENERIC);
     RegAdminCmd("ft_enable", EnableCommand, ADMFLAG_GENERIC);
     RegAdminCmd("ft_disable", DisableCommand, ADMFLAG_GENERIC);
-	RegAdminCmd("ft_forgive", ForgiveCommand, ADMFLAG_GENERIC);
     
     ammo_offset = FindSendPropOffs("CTFPlayer", "m_iAmmo");
-    killers_stack = CreateStack();
-    dc_while_stunned_trie = CreateTrie();
+    tick_interval = GetTickInterval();
     
     AutoExecConfig(true, "freezetag");
+    
+    // Modified Minigun - Spread (106): 80%, Spinup Time (87): 50%, Deployed Movespeed (75): 209% (230 total)
+    TF2Items_CreateWeapon(-1000, "tf_weapon_minigun", 15, SLOT_PRIMARY, 0, 0, "106 ; .8 ; 87 ; .5 ; 75 ; 2.09", 50, _, true);
+    // Modified Bonesaw - +Health (26): 850 (1000 total), Health regen (57): -6 (0 total)
+    TF2Items_CreateWeapon(-1001, "tf_weapon_bonesaw", 8, SLOT_MELEE, 0, 0, "26 ; 850 ; 57 ; -6", _, _, true);
+    // Modified Grenade Launcher - Projectile Speed (103): 110%
+    TF2Items_CreateWeapon(-1002, "tf_weapon_grenadelauncher", 19, SLOT_MELEE, 0, 0, "103 ; 1.1", 4, _, true);
+    // Modified Sicky Launcher - +Arm Time (126): -.42 (.5 total), +Max Stickies Deployed (89): -5 (3 total), Self Pushback (59): 50%
+    TF2Items_CreateWeapon(-1003, "tf_weapon_pipebomblauncher", 20, SLOT_SECONDARY, 0, 0, "126 ; -.42 ; 89 ; -5 ; 59 ; .5", 8, _, true);
+    // Modified Scattergun - Movespeed (54): 80% (320 total)
+    TF2Items_CreateWeapon(-1004, "tf_weapon_scattergun", 13, SLOT_PRIMARY, 0, 0, "54 ; .8", 6, _, true);
+    // Modified SMG - Fire Rate (6): 200%
+    TF2Items_CreateWeapon(-1005, "tf_weapon_smg", 16, SLOT_SECONDARY, 0, 0, "6 ; .5", 6, _, true);
+    // Modified Rifle - Charge Rate (41): 300%
+    TF2Items_CreateWeapon(-1006, "tf_weapon_sniperrifle", 14, SLOT_PRIMARY, 0, 0, "41 ; 3", 6, _, true);
     
     LoadSoundConfig();
     
     if (GetConVarBool(enabled_cvar))
         EnablePlugin();
-        
-    CreateTimer(1.0, FirstMapStart);
 }
 
 /**
@@ -314,11 +280,14 @@ public Action:RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
     decl players[MAX_CLIENT_IDS];
-    
-    while (PopStack(killers_stack)) { }
-    ClearTrie(dc_while_stunned_trie);
+    num_killers = 0;
+    num_dc_while_stunned = 0;
     win_conditions_checked = false;
-    game_over = false;
+    
+    for (new i = 0; i < MAX_DC_PROT; i++)
+    {
+        dc_while_stunned[i] = "";
+    }
     
     // Move everyone to RED and reset all of the arrays
     new num_players = 0;
@@ -334,6 +303,7 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
             ChangeClientTeam(i, TEAM_RED);
             players[num_players] = i;
             num_players++;
+            SetEntProp(i, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
         }
         StopBeacon(i);
     }
@@ -342,16 +312,6 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
     new num_fluttershys = 0;
     new fshy_goal = RoundToCeil(FloatMul(float(num_players), fluttershy_ratio));
     new client;
-    
-    // Make sure all of the players are alive
-    for (new i = 1; i <= MaxClients; i++)
-    {
-        if (IsClientInGame(i) && !IsClientObserver(i))
-        {
-            TF2_RespawnPlayer(i);
-            SetEntProp(i, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
-        }
-    }
     
     while (num_fluttershys < fshy_goal)
     {
@@ -363,7 +323,14 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
             ShowVGUIPanel(client, "class_red", _, false);
         }
     }
-   
+    
+    // Make sure all of the players are alive
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && !IsClientObserver(i))
+            TF2_RespawnPlayer(i);
+    }
+    
     // Round end events go to this entity
     master_cp = FindEntityByClassname(-1, "team_control_point_master");
     if (master_cp == -1)
@@ -422,72 +389,12 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
         map_name_regex = CompileRegex(newValue);
     else if (convar == class_change_time_limit_cvar)
         class_change_time_limit = GetConVarFloat(class_change_time_limit_cvar);
-    else if (convar == custom_weapon_start_cvar)
-        custom_weapon_start = GetConVarInt(custom_weapon_start_cvar);
-    else if (convar == no_time_or_win_limit_cvar)
-    {
-        no_time_or_win_limit = GetConVarBool(no_time_or_win_limit_cvar);
-        if (enabled)
-        {
-            if (no_time_or_win_limit)
-            {
-                original_max_rounds_val = GetConVarInt(max_rounds_cvar);
-                original_time_limit_val = GetConVarInt(time_limit_cvar);
-            }
-            else
-            {
-                SetConVarInt(max_rounds_cvar, original_max_rounds_val);
-                SetConVarInt(time_limit_cvar, original_time_limit_val);
-            }
-        }
-    }
     else if (convar == enabled_cvar)
     {
         if (GetConVarBool(convar))
             EnablePlugin();
         else
             DisablePlugin();
-    }
-}
-
-/**
- * Callback for when a console variable not created by this plugin is changed.
- * 
- * @param convar The handle of the console variable that was changed.
- * @param oldValue The value of the console variable before this event.
- * @param newValue The value of the console variable after this event.
- */
-public DefaultConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
-{
-    if (!enabled)
-        return;
-        
-    if (convar == ff_cvar)
-    {
-        original_ff_val = GetConVarInt(ff_cvar);
-        SetConVarInt(ff_cvar, 1);
-    }
-    else if (convar == scramble_teams_cvar)
-    {
-        original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
-        SetConVarInt(scramble_teams_cvar, 0);
-    }
-    else if (convar == teams_unbalance_cvar)
-    {
-        original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
-        SetConVarInt(teams_unbalance_cvar, 0);
-    }
-    else if (convar == max_rounds_cvar)
-    {
-        original_max_rounds_val = GetConVarInt(max_rounds_cvar);
-        if (no_time_or_win_limit)
-            SetConVarInt(max_rounds_cvar, 0);
-    }
-    else if (convar == time_limit_cvar)
-    {
-        original_time_limit_val = GetConVarInt(time_limit_cvar);
-        if (no_time_or_win_limit)
-            SetConVarInt(time_limit_cvar, 0);
     }
 }
 
@@ -505,19 +412,11 @@ EnablePlugin()
     original_ff_val = GetConVarInt(ff_cvar);
     original_scramble_teams_val = GetConVarInt(scramble_teams_cvar);
     original_teams_unbalance_val = GetConVarInt(teams_unbalance_cvar);
-    original_max_rounds_val = GetConVarInt(max_rounds_cvar);
-    original_time_limit_val = GetConVarInt(time_limit_cvar);
     
     // Set convars to make the unfreezing and stacked teams work
     SetConVarInt(ff_cvar, 1);
     SetConVarInt(scramble_teams_cvar, 0);
     SetConVarInt(teams_unbalance_cvar, 0);
-    
-    if (no_time_or_win_limit)
-    {
-        SetConVarInt(max_rounds_cvar, 0);
-        SetConVarInt(time_limit_cvar, 0);
-    }
     
     // Initialize arrays
     for (new i = 1; i < MAX_CLIENT_IDS; i++)
@@ -548,13 +447,14 @@ EnablePlugin()
     HookEvent("teamplay_round_win", RoundEnd);
     HookEvent("teamplay_round_stalemate", RoundEnd);
     HookEvent("post_inventory_application", PostInventoryApplication);
-    HookEvent("player_hurt", PlayerHurt);
     
     ServerCommand("mp_restartgame_immediate 1");
+
+
 }
 
 /**
- * Turns off the plugin. Unhooks events and restores console variables.
+ * Turns of the plugin. Unhooks events and restores console variables.
  *
  * @param unloading Set to true only if this function is being called due to a full unload of the plugin.
  */
@@ -564,6 +464,12 @@ DisablePlugin(bool:unloading = false)
         return;
     
     enabled = false;
+
+    
+    // Restore convars to original state
+    SetConVarInt(ff_cvar, original_ff_val);
+    SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
+    SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
     
     // Unhook commands and events. If the plugin is ending, these have already been removed.
     if (!unloading)
@@ -578,7 +484,6 @@ DisablePlugin(bool:unloading = false)
         UnhookEvent("teamplay_round_win", RoundEnd);
         UnhookEvent("teamplay_round_stalemate", RoundEnd);
         UnhookEvent("post_inventory_application", PostInventoryApplication);
-        UnhookEvent("player_hurt", PlayerHurt);
     }
     
     // Remove SDKHooks player event hooks
@@ -587,6 +492,7 @@ DisablePlugin(bool:unloading = false)
         if (IsClientInGame(i))
         {
             SDKUnhook(i, SDKHook_OnTakeDamage, OnTakeDamage);
+            SDKUnhook(i, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
             SDKUnhook(i, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
             SDKUnhook(i, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
             SDKUnhook(i, SDKHook_Spawn, OnSpawn);
@@ -611,51 +517,18 @@ DisablePlugin(bool:unloading = false)
         
     }   
      
-    // Restore convars to original state
-    SetConVarInt(ff_cvar, original_ff_val);
-    SetConVarInt(scramble_teams_cvar, original_scramble_teams_val);
-    SetConVarInt(teams_unbalance_cvar, original_teams_unbalance_val);
-    SetConVarInt(max_rounds_cvar, original_max_rounds_val);
-    SetConVarInt(time_limit_cvar, original_time_limit_val);
-    
-    if (!game_over)
-    {
-        ServerCommand("mp_scrambleteams");
-        ServerCommand("mp_restartgame_immediate 1");
-    }
+    ServerCommand("mp_scrambleteams");
+    ServerCommand("mp_restartgame_immediate 1");
 }
 
 /**
- * Called when the map is loaded, except on the first map.
+ * Called when the map is first loaded.
  */
 public OnMapStart()
-{
-    MapStarted(false);
-}
-
-/**
- * Timer callback to run map initialization on the first map loaded by the server.
- * 
- * @param timer A handle to the timer that triggered this callback.
- */
-public Action:FirstMapStart(Handle:timer)
-{
-    MapStarted(true);
-}
-
-/**
- * Perform initialization that must occur on each map load. 
- *
- * @param first_map True if this function is not being called through OnMapStart, otherwise false.
- */
-MapStarted(bool:first_map)
 {
     decl String:path[PLATFORM_MAX_PATH];
     new size;
     
-    if (first_map)
-        HookEvent("tf_game_over", GameOver);
-        
     for (new i = 0; i < sizeof(sounds); i++)
     {
         size = GetArraySize(sounds[i]);
@@ -672,30 +545,8 @@ MapStarted(bool:first_map)
     GetCurrentMap(path, sizeof(path));
     if (MatchRegex(map_name_regex, path) > 0)
         SetConVarBool(enabled_cvar, true);
-}
-
-/**
- * Event handler for when the game ends. Used on the first map played in place of OnMapEnd
- * since OnMapEnd is not called on the first map.
- * 
- * @param event An handle to the event that triggered this callback.
- * @param name The name of the event that triggered this callback.
- * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
- */
-public GameOver(Handle:event, const String:name[], bool:dontBroadcast)
-{
-    game_over = true;
-    UnhookEvent("tf_game_over", GameOver);
-    SetConVarBool(enabled_cvar, false);
-}
-
-/**
- * Called when the map is finished, except on the first map.
- */
-public OnMapEnd()
-{
-    game_over = true;
-	SetConVarBool(enabled_cvar, false);
+    else
+        SetConVarBool(enabled_cvar, false);
 }
 
 /**
@@ -735,7 +586,7 @@ public PreThinkPost(client)
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY))
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            PrintToChat(client, "%t", "MinigunReloading", minigun_reload_time);
+            PrintToChat(client, "%t", "MinigunReloading");
             SetEntData(client, ammo_offset + 4, 0, 4);
             reload_timer[client] = CreateTimer(minigun_reload_time, ReloadMinigun, client);
         }
@@ -750,7 +601,7 @@ public PreThinkPost(client)
             ((GetClientButtons(client) & IN_RELOAD == IN_RELOAD && GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") == GetPlayerWeaponSlot(client, SLOT_PRIMARY)) 
             || GetEntData(client, ammo_offset + 4, 4) == 0))
         {
-            PrintToChat(client, "%t", "FlamethrowerReloading", flamethrower_reload_time);
+            PrintToChat(client, "%t", "FlamethrowerReloading");
             SetEntData(client, ammo_offset + 4, 0, 4);
             reload_timer[client] = CreateTimer(flamethrower_reload_time, ReloadFlamethrower, client);
         }
@@ -898,6 +749,7 @@ public OnClientPutInServer(client)
 SetupPlayer(client)
 {
     SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+    SDKHook(client, SDKHook_OnTakeDamagePost, OnTakeDamagePost);
     SDKHook(client, SDKHook_WeaponCanSwitchTo, WeaponCanSwitchTo);
     SDKHook(client, SDKHook_WeaponCanUse, WeaponCanSwitchTo);
     SDKHook(client, SDKHook_Spawn, OnSpawn);
@@ -923,7 +775,8 @@ public OnClientDisconnect(client)
         {
             TF2_RemoveCondition(client, TFCond_Dazed); // Try to prevent player's camera from bugging out
             GetClientAuthString(client, steam_id, sizeof(steam_id));
-            SetTrieValue(dc_while_stunned_trie, steam_id, 0);
+            dc_while_stunned[num_dc_while_stunned % MAX_DC_PROT] = steam_id;
+            num_dc_while_stunned++;
         }
             
         is_fluttershy[client] = false;
@@ -971,7 +824,7 @@ public Action:OnSpawn(client)
         // If the player spawns as an invalid class, force them to change
         // Automatically sets them to soldier so they can't just cancel the forced
         // class change.
-        TF2_SetPlayerClass(client, DEFAULT_CLASS);
+        TF2_SetPlayerClass(client, TFClass_Soldier);
         TF2_RespawnPlayer(client);
         ShowVGUIPanel(client, "class_red"); 
     }
@@ -989,10 +842,16 @@ public Action:OnSpawn(client)
  bool:ShouldShame(client)
 {
     decl String:steam_id[100];
-    new temp;
     
     GetClientAuthString(client, steam_id, sizeof(steam_id));
-    return GetTrieValue(dc_while_stunned_trie, steam_id, temp);
+    
+    for (new i = 0; i < MAX_DC_PROT; i++)
+    {
+        if (StrEqual(steam_id, dc_while_stunned[i]))
+            return true;
+    }
+    
+    return false;
 }
 
 /**
@@ -1011,21 +870,22 @@ public Action:WeaponCanSwitchTo(client, weapon)
 }
 
 /**
- * Event handler for a player taking damage. Values in here cannot be modified,
+ * Post event handler for a player taking damage. Values in here cannot be modified,
  * but correctly represent the amount of damage the victim took.
  *
- * @param event An handle to the event that triggered this callback.
- * @param name The name of the event that triggered this callback.
- * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
+ * @param victim Index of the victim.
+ * @param attacker Index of the attacker.
+ * @param inflictor Entity index of the damage inflictor (usually the same as attacker).
+ * @param damage The amount of damage that the victim took.
+ * @param damagetype Bitflags for the type of damage that the victim took.
+ * @param weapon Entity index of the weapon that the victim was injured with.
+ * @param damageForce A vector representing the amount of force the weapon applied to the victim.
+ * @param damagePosition A vector representing the location that the damage came from.
  */
-public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
+public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype, weapon, const Float:damageForce[3], const Float:damagePosition[3])
 {
     decl String:victim_name[MAX_NAME_LENGTH];
     decl String:attacker_name[MAX_NAME_LENGTH];
-    
-    new victim = GetClientOfUserId(GetEventInt(event, "userid"));
-    new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
-    new damage = GetEventInt(event, "damageamount");
     
     GetCustomClientName(victim, victim_name, sizeof(victim_name));
     GetCustomClientName(attacker, attacker_name, sizeof(attacker_name));
@@ -1036,19 +896,19 @@ public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
         bypass_immunity[victim] = false;
     }
     else if (is_fluttershy[victim] && !IsWorldDeath(attacker))
-    {   
-        PrintToChatAll("%d", damage);
-        current_health[victim] = current_health[victim] - damage;
+    {
+        current_health[victim] = current_health[victim] - RoundFloat(damage);
         
         if (current_health[victim] <= 0)
         {
-            PushStackCell(killers_stack, GetClientUserId(attacker));
-            PrintToChatAll("%t", "PlayerDefeat", attacker_name, victim_name);
+            killer[num_killers] = GetClientUserId(attacker);
+            num_killers++;
+            PrintToChatAll("%t", "PlayerDefeat",  attacker_name, victim_name);
             ClearFluttershy(victim, attacker);
         }
         else
         {
-            displayed_health[victim] = displayed_health[victim] - damage;
+            displayed_health[victim] = displayed_health[victim] - RoundFloat(damage);
             
             // Refill the life bar and display to the user the multiple of 1000 that his life is now counting down from
             if (displayed_health[victim] <= 0)
@@ -1066,8 +926,6 @@ public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
         // Set the health back to normal
         SetEntityHealth(victim, current_health[victim]);
     }
-    
-    return Plugin_Continue;
 }
 
 /**
@@ -1084,7 +942,7 @@ public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
  * @param damagePosition A vector representing the location that the damage came from.
  */
 public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3])
-{       
+{    
     // The player is supposed to die, don't modify damage but remove the gib effect that happens
     // due to using an explosive entity to kill the player
     if (bypass_immunity[victim])
@@ -1276,7 +1134,7 @@ public Action:UnfreezePlayerCommand(client, args)
        
 	if (args < 1)
 	{
-		ReplyToCommand(client, "Usage: ft_unfreeze <#userid|name>");
+		PrintToConsole(client, "Usage: ft_unfreeze <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1313,7 +1171,7 @@ public Action:FreezePlayerCommand(client, args)
        
 	if (args < 1)
 	{
-		ReplyToCommand(client, "Usage: ft_freeze <#userid|name>");
+		PrintToConsole(client, "Usage: ft_freeze <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1350,7 +1208,7 @@ public Action:MakeFluttershyCommand(client, args)
        
 	if (args < 1)
 	{
-		ReplyToCommand(client, "Usage: ft_flutts <#userid|name>");
+		PrintToConsole(client, "Usage: ft_flutts <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1387,7 +1245,7 @@ public Action:ClearFluttershyCommand(client, args)
        
 	if (args < 1)
 	{
-		ReplyToCommand(client, "Usage: ft_unflutts <#userid|name>");
+		PrintToConsole(client, "Usage: ft_unflutts <#userid|name>");
 		return Plugin_Handled;
 	}
     
@@ -1412,51 +1270,6 @@ public Action:ClearFluttershyCommand(client, args)
 }
 
 /**
- * Command handler for letting a player who disconencted while stunned rejoin the game.
- *
- * @param client Index of the client that sent the command.
- * @param args The number of arguments.
- */
-public Action:ForgiveCommand(client, args)
-{
-    decl String:arg[MAX_NAME_LENGTH];
-    decl String:name[MAX_NAME_LENGTH];
-    decl targets[MAX_CLIENT_IDS];
-	decl String:steam_id[100];
-    new bool:tn_is_ml;
-    new temp;
-    
-	if (args < 1)
-	{
-		ReplyToCommand(client, "Usage: ft_forgive <#userid|name>");
-		return Plugin_Handled;
-	}
-    
-	GetCmdArg(1, arg, sizeof(arg));
-    new num_targets = ProcessTargetString(arg, client, targets, sizeof(targets), 0, name, sizeof(name), tn_is_ml);
-                                
-    if (num_targets <= 0)
-    {
-        ReplyToTargetError(client, num_targets);
-    }
-    else
-    {
-        for (new i = 0; i < num_targets; i++)
-        { 
-            GetClientAuthString(targets[i], steam_id, sizeof(steam_id));
-            if (GetTrieValue(dc_while_stunned_trie, steam_id, temp))
-            {
-                GetCustomClientName(client, name, sizeof(name));
-                PrintToChatAll("%t", "PlayerForgiven", name);
-                RemoveFromTrie(dc_while_stunned_trie, steam_id);
-            }
-        }
-    }
- 
-	return Plugin_Handled;
-}
-
-/**
  * Turns a player into a Fluttershy.
  *
  * @param client Index of the player to turn into a Fluttershy.
@@ -1473,7 +1286,7 @@ MakeFluttershy(client)
         ChangeClientTeam(client, TEAM_BLU);
         TF2_SetPlayerClass(client, TFClass_Medic);
         TF2_RespawnPlayer(client);
-        RegenCustom(client);
+        RegenVanilla(client);
         displayed_health[client] = max_hp - ((max_hp / 1000) * 1000);
         if (displayed_health[client] <= 0) displayed_health[client] = 1000;
         current_health[client] = max_hp;
@@ -1498,9 +1311,9 @@ ClearFluttershy(client, attacker)
         bypass_immunity[client] = true;
         KillPlayer(client, attacker);
         ChangeClientTeam(client, TEAM_BLU);
-        TF2_SetPlayerClass(client, DEFAULT_CLASS);
+        TF2_SetPlayerClass(client, TFClass_Soldier);
         TF2_RespawnPlayer(client);
-        RegenCustom(client);
+        RegenVanilla(client);
         StopBeacon(client);
         CheckWinCondition();
     }
@@ -1606,16 +1419,8 @@ public Action:BlockCommandFluttershy(client, const String:command[], argc)
         return Plugin_Handled;
     else if (StrEqual(command, "kill", false) || StrEqual(command, "explode", false))
     {
-		if (GetGameTime() - round_start_time > FREE_CLASS_CHANGE_TIME && last_class_change[client] + class_change_time_limit > GetGameTime())
-		{
-			PrintToChat(client, "%t", "TooSoonSuicideError", RoundToNearest(last_class_change[client] + class_change_time_limit - GetGameTime()));
-		}
-		else
-		{
-			ForcePlayerSuicide(client);
-			TF2_RespawnPlayer(client);
-			last_class_change[client] = GetGameTime();
-		}
+        ForcePlayerSuicide(client);
+        TF2_RespawnPlayer(client);
         return Plugin_Handled;
     }
     else
@@ -1650,7 +1455,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     decl String:class[10];
     
     GetCmdArg(1, class, sizeof(class));
-	
+    PrintToChatAll("%f, %f", last_class_change[client], GetGameTime());
     if (is_fluttershy[client])
     {
         PrintToChat(client, "%t", "FluttershyClassError");
@@ -1683,10 +1488,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
                 reload_timer[client] = INVALID_HANDLE;
             }
             TF2_SetPlayerClass(client, class_enum);
-            RegenCustom(client);
-			if (!IsPlayerAlive(client))
-				TF2_RespawnPlayer(client);
-            SetEntProp(client, Prop_Send, "m_CollisionGroup", 2);
+            RegenVanilla(client);
             last_class_change[client] = GetGameTime();
         }
         return Plugin_Handled;
@@ -1715,7 +1517,7 @@ TFClassType:ClassNameToEnum(const String:class[])
  */
 bool:IsRedClassAllowed(const String:class[])
 {
-    new TFClassType:class_enum = ClassNameToEnum(class);
+    new TFClassType:class_enum = TF2_GetClass(class);
     return IsRedClassAllowedByEnum(class_enum);
 }
 
@@ -1727,7 +1529,7 @@ bool:IsRedClassAllowed(const String:class[])
  */
 bool:IsRedClassAllowedByEnum(TFClassType:class)
 {
-    return !(class == TFClass_Medic || class == TFClass_Engineer || class == TFClass_Spy || class == TFClass_Unknown);
+    return !(class == TFClass_Medic || class == TFClass_Engineer || class == TFClass_Spy);
 }
 
 /**
@@ -1739,7 +1541,6 @@ CheckWinCondition(bool:round_end = false)
     new bool:fluttershy_exists = false;
     new bool:all_players_stunned = true;
     new clientid;
-    new userid;
     
     if (win_conditions_checked)
         return;
@@ -1765,9 +1566,9 @@ CheckWinCondition(bool:round_end = false)
         EmitSoundToAll(sound_path, _, _, SNDLEVEL_DEFAULT);
         PrintToChatAll("%t", "FluttershyLose");
         PrintToChatAll("%t", "Winners");
-        while (PopStackCell(killers_stack, userid))
+        for (new i = 0; i < num_killers; i++)
         {
-            clientid = GetClientOfUserId(userid);
+            clientid = GetClientOfUserId(killer[i]) ;
             if (clientid > 0 && IsClientInGame(clientid))
                 PrintToChatAll("- %N", clientid);
         }
@@ -1787,12 +1588,12 @@ CheckWinCondition(bool:round_end = false)
             if (is_fluttershy[i])
                 PrintToChatAll("- %N", i);
         }
-        while (PopStackCell(killers_stack, userid))
+        for (new i = 0; i < num_killers; i++)
         {
-            clientid = GetClientOfUserId(userid);
+            clientid = GetClientOfUserId(killer[i]) ;
             if (clientid > 0 && IsClientInGame(clientid))
                 PrintToChatAll("- %N", clientid);
-        }  
+        }     
       
         win_conditions_checked = true;
         
@@ -1804,11 +1605,6 @@ CheckWinCondition(bool:round_end = false)
     }
 }
 
-/**
- * Creates a beacon around a player. Beacons around RED players grow over time.
- *
- * @param client The client to place a beacon around.
- */
 StartBeacon(client)
 {
     if (beacon_timer[client] == INVALID_HANDLE)
@@ -1826,11 +1622,6 @@ StartBeacon(client)
     }
 }
 
-/**
- * Stops a beacon started by StartBeacon().
- *
- * @param client The client whose beacon should be disabled.
- */
 StopBeacon(client)
 {
     if (beacon_timer[client] != INVALID_HANDLE)
@@ -1876,37 +1667,19 @@ public Action:SpawnBeacon(Handle:timer, any:client)
     }
 }
 
-/**
- * Event handler for a player applying a new weapon set.
- * 
- * @param event An handle to the event that triggered this callback.
- * @param name The name of the event that triggered this callback.
- * @param dontBroadcast True if the event broadcasts to clients, otherwise false.
- */
 public PostInventoryApplication(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-    SetCustomWeapons(client);
+    SetVanillaWeapons(client);
 }
 
-/**
- * Regenerates a player and gives them the custom weapon set.
- *
- * @param The index of the client to regenerate.
- */
-RegenCustom(client)
+RegenVanilla(client)
 {
     TF2_RegeneratePlayer(client);
-    SetCustomWeapons(client);
+    SetVanillaWeapons(client);
 }
 
-/**
- * Gives a player a custom weapon loadout. Items are defined in the 
- * TF2Items Give Weapon configuration.
- * 
- * @param The index of the client to give weapons.
- */
-SetCustomWeapons(client)
+SetVanillaWeapons(client)
 {
     TF2_RemoveWeaponSlot(client, 0);
     TF2_RemoveWeaponSlot(client, 1);
@@ -1916,71 +1689,55 @@ SetCustomWeapons(client)
     {
     case TFClass_Scout:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - SCOUT - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SCOUT - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SCOUT - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, -1004);
+        TF2Items_GiveWeapon(client, 23);
+        TF2Items_GiveWeapon(client, 0);
     }
     case TFClass_DemoMan:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - DEMOMAN - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - DEMOMAN - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - DEMOMAN - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, -1002);
+        TF2Items_GiveWeapon(client, -1003);
+        TF2Items_GiveWeapon(client, 1);
     }
     case TFClass_Pyro:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - PYRO - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - PYRO - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - PYRO - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, 21);
+        TF2Items_GiveWeapon(client, 12);
+        TF2Items_GiveWeapon(client, 2);
     }
     case TFClass_Sniper:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - SNIPER - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SNIPER - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SNIPER - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, -1006);
+        TF2Items_GiveWeapon(client, -1005);
+        TF2Items_GiveWeapon(client, 3);
     }
     case TFClass_Spy:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - SPY - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SPY - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SPY - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, 24);
+        // Can't give sapper?
+        TF2Items_GiveWeapon(client, 4);
     }
     case TFClass_Heavy:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - HEAVY - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - HEAVY - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - HEAVY - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, -1000);
+        TF2Items_GiveWeapon(client, 11);
+        TF2Items_GiveWeapon(client, 5);
     }
     case TFClass_Soldier:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - SOLDIER - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SOLDIER - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - SOLDIER - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, 18);
+        TF2Items_GiveWeapon(client, 10);
+        TF2Items_GiveWeapon(client, 6);
     }
     case TFClass_Engineer:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - ENGINEER - SLOT_PRIMARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - ENGINEER - SLOT_SECONDARY, true);
-        GiveWeaponIfExists(client, custom_weapon_start - ENGINEER - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, 9);
+        TF2Items_GiveWeapon(client, 22);
+        TF2Items_GiveWeapon(client, 7);
     }
     case TFClass_Medic:
     {
-        GiveWeaponIfExists(client, custom_weapon_start - MEDIC - SLOT_MELEE, true);
+        TF2Items_GiveWeapon(client, -1001);
     }
     }
-}
-
-/**
- * Checks if a weapon exists before trying to give it to a player.
- * 
- * @param client The index of the client to give a weapon to.
- * @param weapon_id The index of the weapon to give.
- * @param fallback_to_default If true and the weapon does not exist, the player will be
- *                            given the default class weapon for the slot.
- */
-GiveWeaponIfExists(client, weapon_id, bool:fallback_to_default)
-{
-    if (TF2Items_CheckWeapon(weapon_id))
-        TF2Items_GiveWeapon(client, weapon_id);
-    else if (fallback_to_default)
-        TF2Items_GiveWeapon(client, default_weapon_ids[(weapon_id - custom_weapon_start) * -1]);
 }
