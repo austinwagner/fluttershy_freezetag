@@ -1056,10 +1056,15 @@ public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
             displayed_health[victim] = displayed_health[victim] - damage;
             
             // Refill the life bar and display to the user the multiple of 1000 that his life is now counting down from
-            if (displayed_health[victim] <= 0)
+            if (displayed_health[victim] < 0)
             {
                 PrintToChatAll("%t", "CurrentHealth", victim_name, current_health[victim]);
                 displayed_health[victim] = current_health[victim] - ((current_health[victim] / 1000) * 1000);
+            }
+            else if (displayed_health[victim] == 0)
+            {
+                PrintToChatAll("%t", "CurrentHealth", victim_name, current_health[victim]);
+                displayed_health[victim] = 1000;
             }
             
         
@@ -1662,7 +1667,7 @@ public Action:JoinClassCommand(client, const String:command[], argc)
     decl String:class[10];
     
     GetCmdArg(1, class, sizeof(class));
-	
+    
     if (is_fluttershy[client])
     {
         PrintToChat(client, "%t", "FluttershyClassError");
