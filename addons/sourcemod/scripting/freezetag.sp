@@ -13,6 +13,7 @@
 #define MAX_CLIENT_IDS MAXPLAYERS + 1
 
 /****** Teams ******/
+#define TEAM_SPEC 1
 #define TEAM_RED 2
 #define TEAM_BLU 3
 
@@ -165,7 +166,7 @@ public OnPluginStart()
     airblast_cooldown_time_cvar = CreateConVar("freezetag_airblast_cooldown", "3.0", "The amount of time in seconds before a Pyro can airblast again.", CVAR_FLAGS);
     round_time_cvar = CreateConVar("freezetag_round_time", "300", "The amount of time in seconds that a round will last.", CVAR_FLAGS);
     fluttershy_ratio_cvar = CreateConVar("freezetag_player_ratio", "6", "1 out of this many players will be selected as a Fluttershy.", CVAR_FLAGS);
-    map_name_regex_cvar = CreateConVar("freezetag_maps", "freezetag_", "The maps to automatically enable this plugin on, written as a PCRE. If any text in the map name matches the RegEx, the plugin will be enabled.", CVAR_FLAGS);
+    map_name_regex_cvar = CreateConVar("freezetag_maps", "ft_", "The maps to automatically enable this plugin on, written as a PCRE. If any text in the map name matches the RegEx, the plugin will be enabled.", CVAR_FLAGS);
     class_change_time_limit_cvar = CreateConVar("freezetag_class_change_time_limit", "15.0", "How long in seconds a player must wait before changing classes again.", CVAR_FLAGS);
     no_time_or_win_limit_cvar = CreateConVar("freezetag_disable_auto_map_change", "1", "1 to temporarily disable map time and win limits, 0 to leave the settings as they are.", CVAR_FLAGS);
     custom_weapon_start_cvar = CreateConVar("freezetag_custom_weapon_start", "-1000", "The starting ID for the custom weapons used by this plugin. See the README for a mapping of offset to weapon.", CVAR_FLAGS);
@@ -185,6 +186,7 @@ public OnPluginStart()
     HookConVarChange(class_change_time_limit_cvar, ConVarChanged);
     HookConVarChange(no_time_or_win_limit_cvar, ConVarChanged);
     HookConVarChange(custom_weapon_start_cvar, ConVarChanged);
+    HookConVarChange(map_name_regex_cvar, ConVarChanged);
     
     // Get the current values for all of the console variables
     max_hp = GetConVarInt(max_hp_cvar);
@@ -400,6 +402,8 @@ public Action:RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
  */
 public ConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
 {
+    decl String:cvar_string[512];
+    
     if (convar == max_hp_cvar)
         max_hp = GetConVarInt(convar);
     else if (convar == freeze_duration_cvar)
@@ -442,6 +446,11 @@ public ConVarChanged(Handle:convar, const String:oldValue[], const String:newVal
                 SetConVarInt(time_limit_cvar, original_time_limit_val);
             }
         }
+    }
+    else if (convar == map_name_regex_cvar)
+    {
+        GetConVarString(map_name_regex_cvar, cvar_string, sizeof(cvar_string)); 
+        map_name_regex = CompileRegex(cvar_string);
     }
     else if (convar == enabled_cvar)
     {
@@ -907,7 +916,7 @@ SetupPlayer(client)
     if (!ShouldShame(client))
         ChangeClientTeam(client, TEAM_RED);
     else
-        ChangeClientTeam(client, 1);
+        ChangeClientTeam(client, TEAM_SPEC);
 }
 
 /**
@@ -958,7 +967,7 @@ public OnClientDisconnect(client)
  */
 public Action:OnSpawn(client)
 {
-    if (GetClientTeam(client) == 1)
+    if (GetClientTeam(client) == TEAM_SPEC)
         return Plugin_Continue;
         
     SetEntProp(client, Prop_Send, "m_CollisionGroup", 2); // Only collide with world and triggers
@@ -1095,6 +1104,10 @@ public Action:PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
  */
 public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3])
 {       
+    // If a client disconnects after firing a projectile, don't do any damage so it is not possible for a disconnected client to win.
+    if (!IsClientInGame(attacker))
+        return Plugin_Handled;
+        
     // The player is supposed to die, don't modify damage but remove the gib effect that happens
     // due to using an explosive entity to kill the player
     if (bypass_immunity[victim])
@@ -1412,9 +1425,12 @@ public Action:ClearFluttershyCommand(client, args)
     {
         for (new i = 0; i < num_targets; i++)
         {
-            GetCustomClientName(targets[i], name, sizeof(name));
-            PrintToChatAll("%t", "ClearFluttershy", name);
-            ClearFluttershy(targets[i], 0);
+            if (is_fluttershy[i])
+            {
+                GetCustomClientName(targets[i], name, sizeof(name));
+                PrintToChatAll("%t", "ClearFluttershy", name);
+                ClearFluttershy(targets[i], 0);
+            }
         }
     }
  
